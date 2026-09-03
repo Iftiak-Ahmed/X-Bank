@@ -5,7 +5,7 @@ import { api } from "../../lib/api";
 import { Card, PageHeader, PrimaryButton } from "../../components/Shared";
 
 export default function StaffProfile() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, logout } = useAuth();
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
   const [email, setEmail] = useState(profile?.email ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +53,14 @@ export default function StaffProfile() {
         <Link to="/change-password" className="mt-4 inline-block text-xs font-semibold text-slate-500 hover:text-slate-700">
           Change password →
         </Link>
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <button
+            onClick={() => logout()}
+            className="w-full rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+          >
+            Log out
+          </button>
+        </div>
       </Card>
     </div>
   );

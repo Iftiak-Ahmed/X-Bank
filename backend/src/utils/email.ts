@@ -2,12 +2,15 @@ import nodemailer, { Transporter } from "nodemailer";
 import { db, FieldValue } from "../config/firebase";
 import { env } from "../config/env";
 
+export type EmailType = "account_opening" | "staff_credentials" | "credentials_reset" | "password_reset";
+
 interface EmailMessage {
   to: string;
   subject: string;
   text: string;
   html: string;
   relatedApplicationId?: string | null;
+  type: EmailType;
 }
 
 let transporter: Transporter | null = null;
@@ -50,6 +53,7 @@ export async function sendEmail(message: EmailMessage): Promise<{ delivered: boo
     bodyText: message.text,
     bodyHtml: message.html,
     relatedApplicationId: message.relatedApplicationId ?? null,
+    type: message.type,
     status: delivered ? "sent" : t ? "failed" : "simulated",
     error,
     sentAt: FieldValue.serverTimestamp(),

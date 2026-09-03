@@ -6,7 +6,7 @@ import { StatusPill } from "../../components/RiskChip";
 interface LookupResult {
   account: { id: string; accountNumber: string; accountType: string; currency: string; status: string; balance: number };
   customer: { id: string; fullName: string; address: string; phone: string; nationality: string };
-  kyc: { id: string; status: string; nidNumber: string; hasDocuments: { nidFront: boolean; nidBack: boolean; signature: boolean } } | null;
+  kyc: { id: string; status: string; nidNumber: string; hasDocuments: { ownPhoto: boolean; nidFront: boolean; nidBack: boolean; signature: boolean } } | null;
 }
 
 export default function CashIn() {
@@ -32,7 +32,7 @@ export default function CashIn() {
       const data = await api.get<LookupResult>(`/api/employee/accounts/lookup?accountNumber=${encodeURIComponent(accountNumber.trim())}`);
       setResult(data);
       if (data.kyc) {
-        (["nidFront", "nidBack", "signature"] as const).forEach((kind) => {
+        (["ownPhoto", "nidFront", "nidBack", "signature"] as const).forEach((kind) => {
           if (data.kyc!.hasDocuments[kind]) {
             api.getBlobUrl(`/api/employee/kyc/${data.kyc!.id}/document/${kind}`).then((url) => {
               setImages((prev) => ({ ...prev, [kind]: url }));
@@ -130,6 +130,7 @@ export default function CashIn() {
                   <Row label="NID number" value={result.kyc.nidNumber} />
                 </dl>
                 <div className="mt-4 grid grid-cols-2 gap-3">
+                  <DocPreview label="Applicant photo" src={images.ownPhoto} available={result.kyc.hasDocuments.ownPhoto} />
                   <DocPreview label="NID front" src={images.nidFront} available={result.kyc.hasDocuments.nidFront} />
                   <DocPreview label="NID back" src={images.nidBack} available={result.kyc.hasDocuments.nidBack} />
                   <DocPreview label="Signature" src={images.signature} available={result.kyc.hasDocuments.signature} />

@@ -4,7 +4,7 @@ import { api } from "../../lib/api";
 import { Card, PageHeader, PrimaryButton } from "../../components/Shared";
 
 export default function Profile() {
-  const { profile } = useAuth();
+  const { profile, logout } = useAuth();
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [saved, setSaved] = useState(false);
@@ -37,6 +37,14 @@ export default function Profile() {
           <PrimaryButton type="submit">Save changes</PrimaryButton>
           {saved && <p className="text-sm text-teal-700">Saved.</p>}
         </form>
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <button
+            onClick={() => logout()}
+            className="w-full rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+          >
+            Log out
+          </button>
+        </div>
       </Card>
     </div>
   );

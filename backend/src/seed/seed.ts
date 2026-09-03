@@ -234,7 +234,7 @@ async function main() {
     await savingsRef.set({
       customerId,
       accountNumber: generateAccountNumber(),
-      accountType: "savings",
+      accountType: "current",
       currency: "BDT",
       balance: 845250,
       status: "active",

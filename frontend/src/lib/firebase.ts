@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserSessionPersistence } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,3 +12,8 @@ const firebaseConfig = {
 
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firebaseAuth = getAuth(firebaseApp);
+
+// Session (per-tab) persistence instead of the default local (shared across all
+// tabs of the same origin) — otherwise logging into a different role in one tab
+// silently signs out / switches every other open tab too.
+export const authReady = setPersistence(firebaseAuth, browserSessionPersistence);

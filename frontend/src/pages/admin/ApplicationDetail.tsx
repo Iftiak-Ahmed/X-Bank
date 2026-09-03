@@ -18,7 +18,7 @@ export default function ApplicationDetail() {
     if (!id) return;
     api.get(`/api/admin/applications/${id}`).then((a: any) => {
       setApp(a);
-      (["nidFront", "nidBack", "signature"] as const).forEach((kind) => {
+      (["ownPhoto", "nidFront", "nidBack", "signature"] as const).forEach((kind) => {
         if (a.documents?.[kind]) {
           api.getBlobUrl(`/api/admin/applications/${id}/document/${kind}`).then((url) => {
             setImages((prev) => ({ ...prev, [kind]: url }));
@@ -110,6 +110,7 @@ export default function ApplicationDetail() {
         <Card className="p-5">
           <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">KYC documents</h2>
           <div className="mt-3 grid grid-cols-2 gap-3">
+            <DocPreview label="Applicant photo" src={images.ownPhoto} />
             <DocPreview label="NID front" src={images.nidFront} />
             <DocPreview label="NID back" src={images.nidBack} />
             <DocPreview label="Signature" src={images.signature} />

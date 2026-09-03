@@ -117,6 +117,7 @@ employeeRouter.get("/accounts/lookup", asyncHandler(async (req, res) => {
           status: kyc!.status,
           nidNumber: kyc!.nidNumber,
           hasDocuments: {
+            ownPhoto: Boolean(kyc!.documents?.ownPhoto),
             nidFront: Boolean(kyc!.documents?.nidFront),
             nidBack: Boolean(kyc!.documents?.nidBack),
             signature: Boolean(kyc!.documents?.signature),
@@ -187,6 +188,92 @@ employeeRouter.post("/cash-in", asyncHandler(async (req, res) => {
     resource: "transactions",
     resourceId: txRef.id,
     description: `Employee cashed in ${amount} ${account.currency ?? "BDT"} to account ${accountNumber}.`,
+    ip: req.ip,
+  });
+
+  const result = await runComplianceCheck(txRef.id);
+  const finalSnap = await txRef.get();
+
+  res.status(201).json({ id: txRef.id, ...finalSnap.data(), complianceResult: result });
+}));
+
+// ---------------------------------------------------------------------------
+// Fund transfer — a teller-assisted transfer between two customer accounts.
+// The sender is verified against their KYC photo/NID/signature on file (they're
+// the one authorizing money to leave their account); the receiver only needs
+// name + account number confirmation.
+// ---------------------------------------------------------------------------
+
+const fundTransferSchema = z.object({
+  senderAccountNumber: z.string().min(4),
+  receiverAccountNumber: z.string().min(4),
+  amount: z.number().positive(),
+});
+
+employeeRouter.post("/fund-transfer", asyncHandler(async (req, res) => {
+  const parsed = fundTransferSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+  const { senderAccountNumber, receiverAccountNumber, amount } = parsed.data;
+
+  if (senderAccountNumber === receiverAccountNumber) {
+    return res.status(400).json({ error: "Sender and receiver accounts must be different." });
+  }
+
+  const [senderSnap, receiverSnap] = await Promise.all([
+    db.collection("accounts").where("accountNumber", "==", senderAccountNumber).limit(1).get(),
+    db.collection("accounts").where("accountNumber", "==", receiverAccountNumber).limit(1).get(),
+  ]);
+  if (senderSnap.empty) return res.status(404).json({ error: "Sender account not found." });
+  if (receiverSnap.empty) return res.status(404).json({ error: "Receiver account not found." });
+
+  const senderDoc = senderSnap.docs[0];
+  const receiverDoc = receiverSnap.docs[0];
+  const sender = senderDoc.data();
+  const receiver = receiverDoc.data();
+
+  if (sender.accountType === "dps" || receiver.accountType === "dps") {
+    return res.status(400).json({ error: "DPS accounts can't send or receive fund transfers." });
+  }
+  if (sender.status !== "active") return res.status(400).json({ error: `Sender account is ${sender.status}.` });
+  if (receiver.status !== "active") return res.status(400).json({ error: `Receiver account is ${receiver.status}.` });
+  if (Number(sender.balance) < amount) return res.status(400).json({ error: "Insufficient balance in sender's account." });
+
+  const txRef = db.collection("transactions").doc();
+  await db.runTransaction(async (t) => {
+    const freshSender = await t.get(senderDoc.ref);
+    if (Number(freshSender.data()!.balance) < amount) throw new Error("Insufficient balance in sender's account.");
+
+    t.update(senderDoc.ref, { balance: FieldValue.increment(-amount) });
+    t.update(receiverDoc.ref, { balance: FieldValue.increment(amount) });
+    t.set(txRef, {
+      reference: generateReference("FTX"),
+      senderAccountId: senderDoc.id,
+      senderCustomerId: sender.customerId,
+      receiverAccountId: receiverDoc.id,
+      receiverCustomerId: receiver.customerId,
+      amount,
+      currency: sender.currency ?? "BDT",
+      type: "fund_transfer",
+      purpose: "Branch-assisted fund transfer",
+      channel: "branch",
+      location: "BD",
+      performedBy: req.user!.uid,
+      status: "pending",
+      complianceStatus: "pending_check",
+      riskScore: null,
+      riskLevel: null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "employee",
+    action: "fund_transfer.performed",
+    resource: "transactions",
+    resourceId: txRef.id,
+    description: `Employee transferred ${amount} ${sender.currency ?? "BDT"} from ${senderAccountNumber} to ${receiverAccountNumber}.`,
     ip: req.ip,
   });
 

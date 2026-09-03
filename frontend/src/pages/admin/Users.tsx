@@ -6,10 +6,18 @@ import { useAuth } from "../../context/AuthContext";
 
 const ROLES = ["employee", "compliance_officer", "compliance_manager", "admin"];
 
+function roleLabel(role: string): string {
+  return role
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export default function Users() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState({ fullName: "", email: "", role: "employee", department: "", branch: "" });
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ userId: string; tempPassword: string; emailDelivered: boolean } | null>(null);
@@ -47,8 +55,12 @@ export default function Users() {
     setCreated({ userId: "(existing)", tempPassword: result.tempPassword, emailDelivered: false });
   }
 
-  async function deleteUser(uid: string, email: string) {
-    if (!confirm(`Delete the account for ${email}? This permanently removes their login and can't be undone.`)) return;
+  async function deleteUser(uid: string, email: string, role: string) {
+    const message =
+      role === "client"
+        ? `Delete ${email}? This permanently removes their login, bank accounts, customer profile, and KYC record. Can't be undone.`
+        : `Delete the account for ${email}? This permanently removes their login and can't be undone.`;
+    if (!confirm(message)) return;
     try {
       await api.delete(`/api/admin/users/${uid}`);
       load();
@@ -62,6 +74,15 @@ export default function Users() {
     load();
   }
 
+  const needle = search.trim().toLowerCase();
+  const filteredUsers = !needle
+    ? users
+    : users.filter((u) => {
+        const currentAccountNumbers = (u.accounts ?? []).filter((a: any) => a.accountType === "current").map((a: any) => a.accountNumber);
+        const haystack = [u.fullName, u.email, u.userId, ...currentAccountNumbers].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(needle);
+      });
+
   return (
     <div>
       <PageHeader title="User Management" subtitle="Create and manage staff accounts. Credentials are generated automatically." />
@@ -72,7 +93,7 @@ export default function Users() {
           <input required placeholder="Full name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            {ROLES.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+            {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
           <input placeholder="Department (optional)" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input placeholder="Branch (optional)" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -88,39 +109,70 @@ export default function Users() {
         )}
       </Card>
 
+      <div className="mb-4">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, User ID, or account number…"
+          className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600 sm:w-80"
+        />
+      </div>
+
       <Card>
-        {loading ? <LoadingState /> : users.length === 0 ? <EmptyState message="No users." /> : (
+        {loading ? <LoadingState /> : filteredUsers.length === 0 ? (
+          <EmptyState message={users.length === 0 ? "No users." : "No users match your search."} />
+        ) : (
           <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Email</Th><Th>User ID</Th><Th>Role</Th><Th>Status</Th><Th></Th></tr></thead>
+            <thead><tr className="border-b border-slate-100"><Th>Name</Th><Th>Account Number</Th><Th>Role</Th><Th>Status</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {users.map((u) => (
+              {filteredUsers.map((u) => (
                 <tr key={u.id}>
-                  <Td>{u.email}</Td>
-                  <Td className="font-mono text-xs">{u.userId ?? "—"}</Td>
+                  <Td>{u.fullName ?? "—"}</Td>
+                  <Td className="font-mono text-xs">
+                    {(() => {
+                      const currentAccounts = (u.accounts ?? []).filter((a: any) => a.accountType === "current");
+                      if (!currentAccounts.length) return u.userId ?? "—";
+                      return currentAccounts.map((a: any) => a.accountNumber).join(", ");
+                    })()}
+                  </Td>
                   <Td className="capitalize">{u.role?.replace("_", " ")}</Td>
                   <Td className="space-x-1.5">
                     <StatusPill status={u.status} />
                     {u.locked && <StatusPill status="locked" />}
                   </Td>
-                  <Td className="space-x-3">
-                    <button onClick={() => toggleStatus(u.id, u.status)} className="text-xs font-semibold text-teal-700">
-                      {u.status === "active" ? "Suspend" : "Reactivate"}
-                    </button>
-                    {u.locked && (
-                      <button onClick={() => unlockUser(u.id)} className="text-xs font-semibold text-amber-700">
-                        Unlock
+                  <Td>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => toggleStatus(u.id, u.status)}
+                        className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
+                      >
+                        {u.status === "active" ? "Suspend" : "Reactivate"}
                       </button>
-                    )}
-                    {u.role !== "client" && (
-                      <button onClick={() => resetCredentials(u.id)} className="text-xs font-semibold text-slate-500">
-                        Reset credentials
-                      </button>
-                    )}
-                    {u.role !== "client" && u.id !== profile?.uid && (
-                      <button onClick={() => deleteUser(u.id, u.email)} className="text-xs font-semibold text-red-600">
-                        Delete
-                      </button>
-                    )}
+                      {u.locked && (
+                        <button
+                          onClick={() => unlockUser(u.id)}
+                          className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                        >
+                          Unlock
+                        </button>
+                      )}
+                      {u.role !== "client" && (
+                        <button
+                          onClick={() => resetCredentials(u.id)}
+                          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                        >
+                          Reset credentials
+                        </button>
+                      )}
+                      {u.id !== profile?.uid && (
+                        <button
+                          onClick={() => deleteUser(u.id, u.email, u.role)}
+                          className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </Td>
                 </tr>
               ))}

@@ -11,7 +11,7 @@ const ROLE_OPTIONS: { value: LoginRoleOption; label: string }[] = [
 ];
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, awaitingApproval } = useAuth();
   const navigate = useNavigate();
   const [role, setRole] = useState<LoginRoleOption>("client");
   const [userId, setUserId] = useState("");
@@ -81,12 +81,17 @@ export default function Login() {
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
+            {awaitingApproval && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                Waiting for an administrator to approve this login — please keep this page open.
+              </p>
+            )}
             <button
               type="submit"
               disabled={submitting}
               className="w-full rounded-lg bg-navy-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-800 disabled:opacity-50"
             >
-              {submitting ? "Signing in…" : "Log in"}
+              {awaitingApproval ? "Awaiting approval…" : submitting ? "Signing in…" : "Log in"}
             </button>
             <Link to="/forgot-password" className="block text-center text-xs font-semibold text-teal-700">
               Forgot password?

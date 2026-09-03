@@ -8,6 +8,7 @@ import { env } from "../config/env";
 import { asyncHandler } from "../utils/asyncHandler";
 import { renderPasswordResetEmail, sendEmail } from "../utils/email";
 import { isLocked } from "../config/lockout";
+import { emitLoginRequested } from "../realtime/socket";
 
 export const authRouter = Router();
 
@@ -17,6 +18,13 @@ const LOGIN_ROLE_GROUPS: Record<string, string[]> = {
   compliance: ["compliance_officer", "compliance_manager"],
   admin: ["admin"],
 };
+
+// Client, Compliance, and Admin sign in immediately; Employee logins require a
+// live admin approval (a floating request on the Admin dashboard) before a
+// session is issued. Admin itself is excluded — otherwise if every admin
+// session ever logged out, no one would be left to approve the next admin login.
+const NEEDS_APPROVAL_ROLES = ["employee"];
+const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const loginSchema = z.object({
   role: z.enum(["client", "employee", "compliance", "admin"]),
@@ -67,10 +75,74 @@ authRouter.post("/login", loginRateLimit, asyncHandler(async (req, res) => {
   }
 
   await userDoc.ref.update({ failedLoginCount: 0, lastLoginAt: FieldValue.serverTimestamp() });
+
+  if (NEEDS_APPROVAL_ROLES.includes(user.role)) {
+    const existingPending = await db
+      .collection("loginRequests")
+      .where("uid", "==", userDoc.id)
+      .where("status", "==", "pending")
+      .limit(1)
+      .get();
+
+    let requestId: string;
+    if (!existingPending.empty && Date.now() - (existingPending.docs[0].data().createdAt?.toMillis?.() ?? 0) < APPROVAL_TIMEOUT_MS) {
+      requestId = existingPending.docs[0].id;
+    } else {
+      const ref = await db.collection("loginRequests").add({
+        uid: userDoc.id,
+        userId,
+        role: user.role,
+        email: user.email,
+        fullName: user.fullName ?? user.email,
+        mustChangePassword: Boolean(user.mustChangePassword),
+        status: "pending",
+        customToken: null,
+        approvedBy: null,
+        createdAt: FieldValue.serverTimestamp(),
+        resolvedAt: null,
+        ip: req.ip,
+      });
+      requestId = ref.id;
+
+      await writeAuditLog({ userId: userDoc.id, role: user.role, action: "auth.login_pending_approval", resource: "users", resourceId: userDoc.id, description: `${userId} (${user.role}) is awaiting admin approval to log in.`, ip: req.ip });
+
+      emitLoginRequested({
+        id: requestId,
+        userId,
+        role: user.role,
+        email: user.email,
+        fullName: user.fullName ?? user.email,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    return res.json({ pendingApproval: true, requestId });
+  }
+
   await writeAuditLog({ userId: userDoc.id, role: user.role, action: "auth.login", resource: "users", resourceId: userDoc.id, description: `${userId} logged in as ${user.role}.`, ip: req.ip });
 
   const customToken = await auth.createCustomToken(userDoc.id, { role: user.role });
   res.json({ customToken, role: user.role, mustChangePassword: Boolean(user.mustChangePassword) });
+}));
+
+authRouter.get("/login-requests/:id/status", asyncHandler(async (req, res) => {
+  const snap = await db.collection("loginRequests").doc(req.params.id).get();
+  if (!snap.exists) return res.status(404).json({ error: "Not found" });
+  const request = snap.data()!;
+
+  const ageMs = Date.now() - (request.createdAt?.toMillis?.() ?? 0);
+  if (request.status === "pending" && ageMs > APPROVAL_TIMEOUT_MS) {
+    await snap.ref.update({ status: "expired", resolvedAt: FieldValue.serverTimestamp() });
+    return res.json({ status: "expired" });
+  }
+
+  if (request.status === "approved" && request.customToken) {
+    const customToken = request.customToken;
+    await snap.ref.update({ customToken: null }); // one-time retrieval
+    return res.json({ status: "approved", customToken, role: request.role, mustChangePassword: Boolean(request.mustChangePassword) });
+  }
+
+  res.json({ status: request.status });
 }));
 
 const forgotPasswordSchema = z.object({
@@ -98,7 +170,7 @@ authRouter.post("/forgot-password", forgotPasswordRateLimit, asyncHandler(async 
 
   const resetLink = await auth.generatePasswordResetLink(user.email, { url: `${env.clientOrigin}/login` });
   const { subject, text, html } = renderPasswordResetEmail({ fullName: user.fullName ?? user.email, resetLink });
-  await sendEmail({ to: user.email, subject, text, html });
+  await sendEmail({ to: user.email, subject, text, html, type: "password_reset" });
 
   await writeAuditLog({
     userId: userDoc.id,

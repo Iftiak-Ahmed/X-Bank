@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import { Card, EmptyState, LoadingState, PageHeader, PrimaryButton, SecondaryButton, money } from "../../components/Shared";
+import { Card, EmptyState, LoadingState, PageHeader, money } from "../../components/Shared";
 import { StatusPill } from "../../components/RiskChip";
 
 interface Account {
@@ -12,33 +12,21 @@ interface Account {
   status: string;
 }
 
+const ACCOUNT_TYPE_ORDER: Record<string, number> = { current: 0, savings: 1, dps: 2 };
+
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
 
-  function load() {
+  useEffect(() => {
     api.get<Account[]>("/api/client/accounts").then((accs) => {
-      setAccounts(accs);
+      const sorted = [...accs].sort(
+        (a, b) => (ACCOUNT_TYPE_ORDER[a.accountType] ?? 99) - (ACCOUNT_TYPE_ORDER[b.accountType] ?? 99)
+      );
+      setAccounts(sorted);
       setLoading(false);
     });
-  }
-
-  useEffect(load, []);
-
-  async function act(accountId: string, kind: "deposit" | "withdraw") {
-    const amount = Number(amounts[accountId]);
-    if (!amount || amount <= 0) return;
-    setBusyId(accountId);
-    try {
-      await api.post(`/api/client/transactions/${kind}`, { accountId, amount });
-      setAmounts((a) => ({ ...a, [accountId]: "" }));
-      load();
-    } finally {
-      setBusyId(null);
-    }
-  }
+  }, []);
 
   if (loading) return <LoadingState />;
 
@@ -52,23 +40,13 @@ export default function Accounts() {
           {accounts.map((a) => (
             <Card key={a.id} className="p-6">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 capitalize">{a.accountType} account</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  {a.accountType === "dps" ? "DPS" : a.accountType.charAt(0).toUpperCase() + a.accountType.slice(1)} account
+                </span>
                 <StatusPill status={a.status} />
               </div>
               <div className="mt-1 font-mono text-xs text-slate-400">{a.accountNumber}</div>
               <div className="mt-2 font-serif text-3xl font-semibold text-navy-900">{money(a.balance, a.currency)}</div>
-
-              <div className="mt-5 flex items-center gap-2">
-                <input
-                  type="number"
-                  placeholder="Amount"
-                  value={amounts[a.id] ?? ""}
-                  onChange={(e) => setAmounts((v) => ({ ...v, [a.id]: e.target.value }))}
-                  className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-                <SecondaryButton disabled={busyId === a.id} onClick={() => act(a.id, "deposit")}>Deposit</SecondaryButton>
-                <PrimaryButton disabled={busyId === a.id} onClick={() => act(a.id, "withdraw")}>Withdraw</PrimaryButton>
-              </div>
             </Card>
           ))}
         </div>

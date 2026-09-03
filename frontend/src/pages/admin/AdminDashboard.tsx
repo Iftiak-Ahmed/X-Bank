@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import { KpiCard, LoadingState, PageHeader } from "../../components/Shared";
+import { LoginApprovalPanel } from "./LoginApprovalPanel";
 
 interface Kpis {
   totalUsers: number;
@@ -25,6 +26,7 @@ export default function AdminDashboard() {
 
   return (
     <div>
+      <LoginApprovalPanel />
       <PageHeader title="System Overview" subtitle="X Bank — governance at a glance." />
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
         <KpiCard label="Total Users" value={kpis.totalUsers} />

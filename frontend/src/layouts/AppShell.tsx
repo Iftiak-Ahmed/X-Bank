@@ -1,5 +1,4 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import { Logo } from "../components/Logo";
 
 interface NavItem {
@@ -18,8 +17,6 @@ export function AppShell({
   badgeColor: string;
   profilePath: string;
 }) {
-  const { logout } = useAuth();
-
   return (
     <div className="flex min-h-screen bg-slate-50">
       <aside className="flex w-64 flex-none flex-col bg-navy-950 text-slate-100 shadow-xl">
@@ -57,19 +54,15 @@ export function AppShell({
           <NavLink
             to={profilePath}
             className={({ isActive }) =>
-              `mb-2 block rounded-lg px-3 py-2 text-center text-sm font-medium transition ${
-                isActive ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
+              `block rounded-lg border px-3 py-2 text-center text-sm font-medium transition ${
+                isActive
+                  ? "border-white/25 bg-white/10 text-white"
+                  : "border-white/15 text-slate-200 hover:border-white/25 hover:bg-white/5"
               }`
             }
           >
             My Profile
           </NavLink>
-          <button
-            onClick={() => logout()}
-            className="w-full rounded-lg border border-white/15 px-3 py-2 text-left text-sm font-medium text-slate-200 transition hover:border-white/25 hover:bg-white/5"
-          >
-            Log out
-          </button>
         </div>
       </aside>
       <main className="flex-1 overflow-x-hidden">

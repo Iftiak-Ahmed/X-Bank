@@ -12,9 +12,68 @@ import { readKycDocument } from "../utils/fileStorage";
 import { provisionClientFromApplication } from "../services/accountProvisioning";
 import { asyncHandler } from "../utils/asyncHandler";
 import { isLocked } from "../config/lockout";
+import { emitLoginResolved } from "../realtime/socket";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole("admin"));
+
+// ---------------------------------------------------------------------------
+// Login approval — Employee and Admin logins wait here for a live admin to
+// approve or deny before a session token is ever issued.
+// ---------------------------------------------------------------------------
+
+adminRouter.get("/login-requests", asyncHandler(async (req, res) => {
+  const status = (req.query.status as string) ?? "pending";
+  const snap = await db.collection("loginRequests").where("status", "==", status).orderBy("createdAt", "desc").limit(50).get();
+  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data(), customToken: undefined })));
+}));
+
+adminRouter.post("/login-requests/:id/approve", asyncHandler(async (req, res) => {
+  const ref = db.collection("loginRequests").doc(req.params.id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: "Not found" });
+  const request = snap.data()!;
+  if (request.status !== "pending") return res.status(409).json({ error: `Already ${request.status}.` });
+
+  const customToken = await auth.createCustomToken(request.uid, { role: request.role });
+  await ref.update({ status: "approved", customToken, approvedBy: req.user!.uid, resolvedAt: FieldValue.serverTimestamp() });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "admin",
+    action: "auth.login_approved",
+    resource: "loginRequests",
+    resourceId: req.params.id,
+    description: `Admin approved login for ${request.userId} (${request.role}).`,
+    ip: req.ip,
+  });
+
+  emitLoginResolved(req.params.id);
+  res.status(204).end();
+}));
+
+adminRouter.post("/login-requests/:id/deny", asyncHandler(async (req, res) => {
+  const ref = db.collection("loginRequests").doc(req.params.id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: "Not found" });
+  const request = snap.data()!;
+  if (request.status !== "pending") return res.status(409).json({ error: `Already ${request.status}.` });
+
+  await ref.update({ status: "denied", approvedBy: req.user!.uid, resolvedAt: FieldValue.serverTimestamp() });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "admin",
+    action: "auth.login_denied",
+    resource: "loginRequests",
+    resourceId: req.params.id,
+    description: `Admin denied login for ${request.userId} (${request.role}).`,
+    ip: req.ip,
+  });
+
+  emitLoginResolved(req.params.id);
+  res.status(204).end();
+}));
 
 adminRouter.get("/dashboard", asyncHandler(async (_req, res) => {
   const [users, customers, transactions, rules, alerts, pendingApps, criticalAlerts, highRiskCustomers] = await Promise.all([
@@ -142,12 +201,53 @@ adminRouter.post("/applications/:id/request-info", asyncHandler(async (req, res)
 
 adminRouter.get("/users", asyncHandler(async (_req, res) => {
   const snap = await db.collection("users").orderBy("createdAt", "desc").limit(100).get();
+  const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const customerIds = [...new Set(users.map((u: any) => u.customerId).filter(Boolean))];
+  const accountsByCustomer = new Map<string, { id: string; accountNumber: string; accountType: string }[]>();
+  for (let i = 0; i < customerIds.length; i += 10) {
+    const chunk = customerIds.slice(i, i + 10);
+    const accountsSnap = await db.collection("accounts").where("customerId", "in", chunk).get();
+    accountsSnap.docs.forEach((a) => {
+      const data = a.data();
+      const entry = { id: a.id, accountNumber: data.accountNumber, accountType: data.accountType };
+      accountsByCustomer.set(data.customerId, [...(accountsByCustomer.get(data.customerId) ?? []), entry]);
+    });
+  }
+
   res.json(
-    snap.docs.map((d) => {
-      const data = d.data();
-      return { id: d.id, ...data, locked: isLocked(data.failedLoginCount, data.lastFailedLoginAt) };
-    })
+    users.map((u: any) => ({
+      ...u,
+      locked: isLocked(u.failedLoginCount, u.lastFailedLoginAt),
+      accounts: u.customerId ? accountsByCustomer.get(u.customerId) ?? [] : [],
+    }))
   );
+}));
+
+adminRouter.delete("/accounts/:id", asyncHandler(async (req, res) => {
+  const ref = db.collection("accounts").doc(req.params.id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: "Not found" });
+  const account = snap.data()!;
+
+  if (Number(account.balance) !== 0) {
+    return res.status(400).json({ error: "This account still has a balance. Move the funds out before deleting it." });
+  }
+
+  await ref.delete();
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "admin",
+    action: "account.deleted",
+    resource: "accounts",
+    resourceId: req.params.id,
+    description: `Admin deleted ${account.accountType} account ${account.accountNumber}.`,
+    previousValue: { accountNumber: account.accountNumber, accountType: account.accountType, customerId: account.customerId },
+    ip: req.ip,
+  });
+
+  res.status(204).end();
 }));
 
 const createStaffSchema = z.object({
@@ -182,7 +282,7 @@ adminRouter.post("/users", asyncHandler(async (req, res) => {
     });
 
     const { subject, text, html } = renderStaffCredentialsEmail({ fullName, role, userId, tempPassword });
-    const emailResult = await sendEmail({ to: email, subject, text, html });
+    const emailResult = await sendEmail({ to: email, subject, text, html, type: "staff_credentials" });
 
     await writeAuditLog({
       userId: req.user!.uid,
@@ -252,8 +352,30 @@ adminRouter.delete("/users/:uid", asyncHandler(async (req, res) => {
   if (!snap.exists) return res.status(404).json({ error: "Not found" });
   const user = snap.data()!;
 
-  if (user.role === "client") {
-    return res.status(400).json({ error: "Client accounts can't be deleted here." });
+  let cascaded: { accounts: number; kycRecords: number; beneficiaries: number } | null = null;
+
+  if (user.role === "client" && user.customerId) {
+    const accountsSnap = await db.collection("accounts").where("customerId", "==", user.customerId).get();
+    const nonZero = accountsSnap.docs.find((a) => Number(a.data().balance) !== 0);
+    if (nonZero) {
+      return res.status(400).json({
+        error: `Can't delete: account ${nonZero.data().accountNumber} still has a balance. Move the funds out first.`,
+      });
+    }
+
+    const [kycSnap, beneficiariesSnap] = await Promise.all([
+      db.collection("kycRecords").where("customerId", "==", user.customerId).get(),
+      db.collection("beneficiaries").where("customerId", "==", user.customerId).get(),
+    ]);
+
+    const batch = db.batch();
+    accountsSnap.docs.forEach((a) => batch.delete(a.ref));
+    kycSnap.docs.forEach((k) => batch.delete(k.ref));
+    beneficiariesSnap.docs.forEach((b) => batch.delete(b.ref));
+    batch.delete(db.collection("customers").doc(user.customerId));
+    await batch.commit();
+
+    cascaded = { accounts: accountsSnap.size, kycRecords: kycSnap.size, beneficiaries: beneficiariesSnap.size };
   }
 
   await auth.deleteUser(req.params.uid).catch((err: any) => {
@@ -267,8 +389,10 @@ adminRouter.delete("/users/:uid", asyncHandler(async (req, res) => {
     action: "user.deleted",
     resource: "users",
     resourceId: req.params.uid,
-    description: `Admin deleted ${user.role} account for ${user.email} (User ID ${user.userId ?? "—"}).`,
-    previousValue: { email: user.email, role: user.role, userId: user.userId },
+    description: cascaded
+      ? `Admin deleted client ${user.email} (User ID ${user.userId ?? "—"}) and their ${cascaded.accounts} account(s), customer profile, and KYC record.`
+      : `Admin deleted ${user.role} account for ${user.email} (User ID ${user.userId ?? "—"}).`,
+    previousValue: { email: user.email, role: user.role, userId: user.userId, cascaded },
     ip: req.ip,
   });
 
@@ -286,7 +410,7 @@ adminRouter.post("/users/:uid/reset-credentials", asyncHandler(async (req, res) 
   await ref.update({ mustChangePassword: true, failedLoginCount: 0 });
 
   const { subject, text, html } = renderStaffCredentialsEmail({ fullName: user.fullName ?? user.email, role: user.role, userId: user.userId, tempPassword });
-  await sendEmail({ to: user.email, subject, text, html });
+  await sendEmail({ to: user.email, subject, text, html, type: "credentials_reset" });
 
   await writeAuditLog({
     userId: req.user!.uid,
@@ -428,6 +552,10 @@ adminRouter.get("/audit-logs", asyncHandler(async (req, res) => {
 }));
 
 adminRouter.get("/emails", asyncHandler(async (req, res) => {
-  const snap = await db.collection("emailOutbox").orderBy("sentAt", "desc").limit(Number(req.query.limit ?? 100)).get();
+  const { type } = req.query;
+  let q: FirebaseFirestore.Query = db.collection("emailOutbox");
+  if (type) q = q.where("type", "==", type);
+  q = q.orderBy("sentAt", "desc").limit(Number(req.query.limit ?? 100));
+  const snap = await q.get();
   res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
 }));

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
-import { useAuth } from "../../context/AuthContext";
-import { Card, EmptyState, LoadingState, PageHeader, Td, Th, money, formatDate } from "../../components/Shared";
+import { Card, EmptyState, LoadingState, PageHeader, money } from "../../components/Shared";
 import { StatusPill } from "../../components/RiskChip";
 
 interface Summary {
@@ -13,7 +12,6 @@ interface Summary {
 }
 
 export default function ClientDashboard() {
-  const { profile } = useAuth();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,7 +27,7 @@ export default function ClientDashboard() {
 
   return (
     <div>
-      <PageHeader title={`Welcome back, ${summary.customer?.fullName?.split(" ")[0] ?? "there"}`} subtitle={profile?.customer?.customerCode} />
+      <PageHeader title={summary.customer?.fullName ?? "there"} />
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="p-6 md:col-span-2">
@@ -37,8 +35,6 @@ export default function ClientDashboard() {
           <div className="mt-1 font-serif text-4xl font-semibold text-navy-900">{money(summary.totalBalance)}</div>
           <div className="mt-6 flex flex-wrap gap-3">
             <QuickAction to="/transfer" label="Transfer Money" />
-            <QuickAction to="/accounts" label="Deposit" />
-            <QuickAction to="/accounts" label="Withdraw" />
             <QuickAction to="/beneficiaries" label="Add Beneficiary" />
             <QuickAction to="/transactions" label="View Transactions" />
           </div>
@@ -58,54 +54,6 @@ export default function ClientDashboard() {
           </div>
         </Card>
       </div>
-
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        {summary.accounts.map((a) => (
-          <Card key={a.id} className="p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 capitalize">{a.accountType} account</span>
-              <StatusPill status={a.status} />
-            </div>
-            <div className="mt-1 font-mono text-xs text-slate-400">{a.accountNumber}</div>
-            <div className="mt-2 font-serif text-2xl font-semibold text-navy-900">{money(a.balance, a.currency)}</div>
-          </Card>
-        ))}
-      </div>
-
-      <Card className="mt-6">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="font-serif text-lg font-semibold text-navy-900">Recent Transactions</h2>
-          <Link to="/transactions" className="text-sm font-semibold text-teal-700">View all</Link>
-        </div>
-        {summary.recentTransactions.length === 0 ? (
-          <EmptyState message="No transactions yet." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <Th>Date</Th>
-                  <Th>Reference</Th>
-                  <Th>Type</Th>
-                  <Th>Amount</Th>
-                  <Th>Status</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {summary.recentTransactions.map((t) => (
-                  <tr key={t.id}>
-                    <Td>{formatDate(t.createdAt)}</Td>
-                    <Td className="font-mono text-xs">{t.reference}</Td>
-                    <Td className="capitalize">{t.type}</Td>
-                    <Td>{money(t.amount, t.currency)}</Td>
-                    <Td><StatusPill status={t.status} /></Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
     </div>
   );
 }

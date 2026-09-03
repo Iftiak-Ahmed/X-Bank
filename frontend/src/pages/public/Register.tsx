@@ -21,7 +21,8 @@ export default function Register() {
   const [role, setRole] = useState<PublicRole>("client");
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(initial);
-  const [files, setFiles] = useState<{ nidFront: File | null; nidBack: File | null; signature: File | null }>({
+  const [files, setFiles] = useState<{ ownPhoto: File | null; nidFront: File | null; nidBack: File | null; signature: File | null }>({
+    ownPhoto: null,
     nidFront: null,
     nidBack: null,
     signature: null,
@@ -37,14 +38,15 @@ export default function Register() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!files.nidFront || !files.nidBack || !files.signature) {
-      setError("NID front, NID back, and signature images are all required.");
+    if (!files.ownPhoto || !files.nidFront || !files.nidBack || !files.signature) {
+      setError("Your photo, NID front, NID back, and signature images are all required.");
       return;
     }
     setSubmitting(true);
     try {
       const data = new FormData();
       Object.entries(form).forEach(([k, v]) => data.append(k, v));
+      data.append("ownPhoto", files.ownPhoto);
       data.append("nidFront", files.nidFront);
       data.append("nidBack", files.nidBack);
       data.append("signature", files.signature);
@@ -147,6 +149,7 @@ export default function Register() {
             {step === 2 && (
               <div className="space-y-4">
                 <Field label="NID number" value={form.nidNumber} onChange={(v) => update("nidNumber", v)} />
+                <FileField label="Your photo" file={files.ownPhoto} onChange={(f) => setFiles((x) => ({ ...x, ownPhoto: f }))} />
                 <FileField label="NID front photo" file={files.nidFront} onChange={(f) => setFiles((x) => ({ ...x, nidFront: f }))} />
                 <FileField label="NID back photo" file={files.nidBack} onChange={(f) => setFiles((x) => ({ ...x, nidBack: f }))} />
                 <FileField label="Signature image" file={files.signature} onChange={(f) => setFiles((x) => ({ ...x, signature: f }))} />
@@ -169,7 +172,7 @@ export default function Register() {
                   <div className="flex justify-between border-b border-slate-100 pb-1">
                     <dt className="text-slate-500">Documents</dt>
                     <dd className="font-medium text-navy-900">
-                      {files.nidFront && files.nidBack && files.signature ? "3 files attached" : "Missing files"}
+                      {files.ownPhoto && files.nidFront && files.nidBack && files.signature ? "4 files attached" : "Missing files"}
                     </dd>
                   </div>
                 </dl>

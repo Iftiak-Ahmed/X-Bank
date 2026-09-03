@@ -6,6 +6,7 @@ import { generateApplicationId } from "../utils/ids";
 import { hashBuffer, saveKycDocument } from "../utils/fileStorage";
 import { writeAuditLog } from "../utils/audit";
 import { applicationRateLimit } from "../middleware/rateLimit";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const publicRouter = Router();
 
@@ -38,8 +39,9 @@ publicRouter.post(
     { name: "nidFront", maxCount: 1 },
     { name: "nidBack", maxCount: 1 },
     { name: "signature", maxCount: 1 },
+    { name: "ownPhoto", maxCount: 1 },
   ]),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const parsed = applicationSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
@@ -49,8 +51,9 @@ publicRouter.post(
     const nidFront = files?.nidFront?.[0];
     const nidBack = files?.nidBack?.[0];
     const signature = files?.signature?.[0];
-    if (!nidFront || !nidBack || !signature) {
-      return res.status(400).json({ error: "NID front, NID back, and signature images are all required." });
+    const ownPhoto = files?.ownPhoto?.[0];
+    if (!nidFront || !nidBack || !signature || !ownPhoto) {
+      return res.status(400).json({ error: "Your photo, NID front, NID back, and signature images are all required." });
     }
 
     const existingUser = await auth.getUserByEmail(parsed.data.email).catch(() => null);
@@ -72,6 +75,7 @@ publicRouter.post(
       nidFront: { filename: saveKycDocument(applicationId, "nidFront", nidFront.buffer, nidFront.mimetype), hash: hashBuffer(nidFront.buffer), mimeType: nidFront.mimetype },
       nidBack: { filename: saveKycDocument(applicationId, "nidBack", nidBack.buffer, nidBack.mimetype), hash: hashBuffer(nidBack.buffer), mimeType: nidBack.mimetype },
       signature: { filename: saveKycDocument(applicationId, "signature", signature.buffer, signature.mimetype), hash: hashBuffer(signature.buffer), mimeType: signature.mimetype },
+      ownPhoto: { filename: saveKycDocument(applicationId, "ownPhoto", ownPhoto.buffer, ownPhoto.mimetype), hash: hashBuffer(ownPhoto.buffer), mimeType: ownPhoto.mimetype },
     };
 
     await db
@@ -114,5 +118,5 @@ publicRouter.post(
     );
 
     res.status(201).json({ applicationId, status: "pending_approval" });
-  }
+  })
 );

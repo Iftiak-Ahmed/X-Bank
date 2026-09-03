@@ -4,9 +4,11 @@ import { db, FieldValue } from "../config/firebase";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { generateAccountNumber, generateReference } from "../utils/ids";
+import { generateUniqueAccountNumber } from "../utils/unique";
 import { writeAuditLog } from "../utils/audit";
 import { runComplianceCheck } from "../compliance/monitoringService";
 import { asyncHandler } from "../utils/asyncHandler";
+import { calculateDpsMaturity, DPS_ALLOWED_TERM_YEARS, DPS_PROFIT_RATE_PERCENT } from "../utils/dps";
 
 export const clientRouter = Router();
 clientRouter.use(requireAuth, requireRole("client"));
@@ -263,6 +265,187 @@ clientRouter.post("/transactions/withdraw", asyncHandler(async (req, res) => {
   res.status(201).json({ id: txRef.id });
 }));
 
+// ---------------------------------------------------------------------------
+// DPS (Deposit Pension Scheme) — a fixed-term recurring-deposit savings
+// account. Opening one debits the first monthly installment immediately from
+// a linked current account; further installments are contributed manually
+// (this prototype has no scheduler for real monthly auto-debits).
+// ---------------------------------------------------------------------------
+
+clientRouter.get("/dps/quote", asyncHandler(async (req, res) => {
+  const monthlyDeposit = Number(req.query.monthlyDeposit);
+  const termYears = Number(req.query.termYears);
+  if (!monthlyDeposit || monthlyDeposit <= 0 || !DPS_ALLOWED_TERM_YEARS.includes(termYears)) {
+    return res.status(400).json({ error: "Invalid monthly deposit or term." });
+  }
+  res.json({
+    profitRatePercent: DPS_PROFIT_RATE_PERCENT,
+    totalDeposited: monthlyDeposit * termYears * 12,
+    expectedMaturityAmount: calculateDpsMaturity(monthlyDeposit, termYears),
+  });
+}));
+
+const openDpsSchema = z.object({
+  sourceAccountId: z.string(),
+  termYears: z.number().refine((v) => DPS_ALLOWED_TERM_YEARS.includes(v), "Invalid term."),
+  monthlyDeposit: z.number().positive(),
+});
+
+clientRouter.post("/dps", asyncHandler(async (req, res) => {
+  const customerId = await requireOwnCustomer(req, res);
+  if (!customerId) return;
+  const parsed = openDpsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
+  const { sourceAccountId, termYears, monthlyDeposit } = parsed.data;
+
+  const sourceRef = db.collection("accounts").doc(sourceAccountId);
+  const sourceSnap = await sourceRef.get();
+  if (!sourceSnap.exists || sourceSnap.data()!.customerId !== customerId) {
+    return res.status(403).json({ error: "Not your account." });
+  }
+  if (sourceSnap.data()!.accountType !== "current") {
+    return res.status(400).json({ error: "DPS installments can only be funded from a current account." });
+  }
+  if (Number(sourceSnap.data()!.balance) < monthlyDeposit) {
+    return res.status(400).json({ error: "Insufficient balance for the first installment." });
+  }
+
+  const accountNumber = await generateUniqueAccountNumber();
+  const totalMonths = termYears * 12;
+  const maturityDate = new Date();
+  maturityDate.setMonth(maturityDate.getMonth() + totalMonths);
+  const expectedMaturityAmount = calculateDpsMaturity(monthlyDeposit, termYears);
+
+  const dpsRef = db.collection("accounts").doc();
+  const txRef = db.collection("transactions").doc();
+
+  await db.runTransaction(async (t) => {
+    const freshSource = await t.get(sourceRef);
+    if (Number(freshSource.data()!.balance) < monthlyDeposit) throw new Error("Insufficient balance for the first installment.");
+
+    t.update(sourceRef, { balance: FieldValue.increment(-monthlyDeposit) });
+    t.set(dpsRef, {
+      customerId,
+      accountNumber,
+      accountType: "dps",
+      currency: "BDT",
+      balance: monthlyDeposit,
+      status: "active",
+      createdAt: FieldValue.serverTimestamp(),
+      dps: {
+        sourceAccountId,
+        termYears,
+        monthlyDeposit,
+        profitRatePercent: DPS_PROFIT_RATE_PERCENT,
+        expectedMaturityAmount,
+        totalMonths,
+        depositsMade: 1,
+        maturityDate: maturityDate.toISOString(),
+      },
+    });
+    t.set(txRef, {
+      reference: generateReference("DPS"),
+      senderAccountId: sourceAccountId,
+      senderCustomerId: customerId,
+      receiverAccountId: dpsRef.id,
+      receiverCustomerId: customerId,
+      amount: monthlyDeposit,
+      currency: "BDT",
+      type: "dps_deposit",
+      purpose: "DPS installment",
+      channel: "web",
+      location: "BD",
+      status: "approved",
+      complianceStatus: "cleared",
+      riskScore: 0,
+      riskLevel: "low",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "client",
+    action: "dps.opened",
+    resource: "accounts",
+    resourceId: dpsRef.id,
+    description: `Opened a ${termYears}-year DPS with a monthly deposit of ${monthlyDeposit} BDT.`,
+    ip: req.ip,
+  });
+
+  res.status(201).json({ id: dpsRef.id, accountNumber, expectedMaturityAmount });
+}));
+
+clientRouter.post("/dps/:id/deposit", asyncHandler(async (req, res) => {
+  const customerId = await requireOwnCustomer(req, res);
+  if (!customerId) return;
+
+  const dpsRef = db.collection("accounts").doc(req.params.id);
+  const dpsSnap = await dpsRef.get();
+  if (!dpsSnap.exists || dpsSnap.data()!.customerId !== customerId || dpsSnap.data()!.accountType !== "dps") {
+    return res.status(404).json({ error: "DPS account not found." });
+  }
+  const dps = dpsSnap.data()!.dps;
+  if (dps.depositsMade >= dps.totalMonths) {
+    return res.status(400).json({ error: "This DPS has already reached its full term." });
+  }
+
+  const sourceRef = db.collection("accounts").doc(dps.sourceAccountId);
+  const sourceSnap = await sourceRef.get();
+  if (!sourceSnap.exists || Number(sourceSnap.data()!.balance) < dps.monthlyDeposit) {
+    return res.status(400).json({ error: "Insufficient balance in the linked current account." });
+  }
+
+  const txRef = db.collection("transactions").doc();
+  await db.runTransaction(async (t) => {
+    const freshSource = await t.get(sourceRef);
+    if (Number(freshSource.data()!.balance) < dps.monthlyDeposit) throw new Error("Insufficient balance in the linked current account.");
+
+    t.update(sourceRef, { balance: FieldValue.increment(-dps.monthlyDeposit) });
+    t.update(dpsRef, { balance: FieldValue.increment(dps.monthlyDeposit), "dps.depositsMade": dps.depositsMade + 1 });
+    t.set(txRef, {
+      reference: generateReference("DPS"),
+      senderAccountId: dps.sourceAccountId,
+      senderCustomerId: customerId,
+      receiverAccountId: dpsRef.id,
+      receiverCustomerId: customerId,
+      amount: dps.monthlyDeposit,
+      currency: "BDT",
+      type: "dps_deposit",
+      purpose: "DPS installment",
+      channel: "web",
+      location: "BD",
+      status: "approved",
+      complianceStatus: "cleared",
+      riskScore: 0,
+      riskLevel: "low",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  res.status(204).end();
+}));
+
+clientRouter.get("/dps/:id/transactions", asyncHandler(async (req, res) => {
+  const customerId = await requireOwnCustomer(req, res);
+  if (!customerId) return;
+
+  const dpsSnap = await db.collection("accounts").doc(req.params.id).get();
+  if (!dpsSnap.exists || dpsSnap.data()!.customerId !== customerId || dpsSnap.data()!.accountType !== "dps") {
+    return res.status(404).json({ error: "DPS account not found." });
+  }
+
+  const snap = await db
+    .collection("transactions")
+    .where("receiverAccountId", "==", req.params.id)
+    .orderBy("createdAt", "desc")
+    .limit(50)
+    .get();
+  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+}));
+
 clientRouter.get("/beneficiaries", asyncHandler(async (req, res) => {
   const customerId = await requireOwnCustomer(req, res);
   if (!customerId) return;
@@ -270,7 +453,20 @@ clientRouter.get("/beneficiaries", asyncHandler(async (req, res) => {
   res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
 }));
 
-const beneficiarySchema = z.object({ beneficiaryName: z.string().min(2), accountNumber: z.string().min(4), bankName: z.string().optional() });
+clientRouter.get("/accounts/lookup", asyncHandler(async (req, res) => {
+  const accountNumber = String(req.query.accountNumber ?? "").trim();
+  if (!accountNumber) return res.status(400).json({ error: "Account number is required." });
+
+  const accountSnap = await db.collection("accounts").where("accountNumber", "==", accountNumber).limit(1).get();
+  if (accountSnap.empty) return res.status(404).json({ error: "No account found with that number." });
+
+  const customerSnap = await db.collection("customers").doc(accountSnap.docs[0].data().customerId).get();
+  if (!customerSnap.exists) return res.status(404).json({ error: "No account found with that number." });
+
+  res.json({ fullName: customerSnap.data()!.fullName });
+}));
+
+const beneficiarySchema = z.object({ beneficiaryName: z.string().min(2), accountNumber: z.string().min(4) });
 
 clientRouter.post("/beneficiaries", asyncHandler(async (req, res) => {
   const customerId = await requireOwnCustomer(req, res);

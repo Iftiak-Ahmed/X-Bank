@@ -85,7 +85,7 @@ export async function provisionClientFromApplication(
   batch.set(accountRef, {
     customerId: customerRef.id,
     accountNumber,
-    accountType: "savings",
+    accountType: "current",
     currency: "BDT",
     balance: 0,
     status: "active",
@@ -115,7 +115,7 @@ export async function provisionClientFromApplication(
     userId,
     tempPassword,
   });
-  const emailResult = await sendEmail({ to: application.email, subject, text, html, relatedApplicationId: applicationId });
+  const emailResult = await sendEmail({ to: application.email, subject, text, html, relatedApplicationId: applicationId, type: "account_opening" });
 
   await writeAuditLog({
     userId: adminUid,
@@ -131,7 +131,7 @@ export async function provisionClientFromApplication(
     action: "account.created",
     resource: "accounts",
     resourceId: accountRef.id,
-    description: `Savings account ${accountNumber} created for customer ${customerRef.id}.`,
+    description: `Current account ${accountNumber} created for customer ${customerRef.id}.`,
   });
   await writeAuditLog({
     userId: adminUid,

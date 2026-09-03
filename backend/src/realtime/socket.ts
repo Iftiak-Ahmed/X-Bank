@@ -51,3 +51,11 @@ export function emitAlertUpdated(payload: unknown) {
 export function emitKycStatusChanged(payload: unknown) {
   io?.to("officers").emit("kyc.status_changed", payload);
 }
+
+export function emitLoginRequested(payload: unknown) {
+  io?.to("managers").emit("login.requested", payload);
+}
+
+export function emitLoginResolved(requestId: string) {
+  io?.to("managers").emit("login.resolved", { id: requestId });
+}

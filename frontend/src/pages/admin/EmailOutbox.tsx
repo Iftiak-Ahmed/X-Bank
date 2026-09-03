@@ -3,24 +3,46 @@ import { api } from "../../lib/api";
 import { Card, EmptyState, LoadingState, PageHeader, formatDate } from "../../components/Shared";
 import { StatusPill } from "../../components/RiskChip";
 
+const TYPE_FILTERS = [
+  { value: "", label: "All" },
+  { value: "account_opening", label: "Account Opening" },
+  { value: "staff_credentials", label: "Staff Credentials" },
+  { value: "credentials_reset", label: "Credentials Reset" },
+  { value: "password_reset", label: "Password Recovery" },
+];
+
 export default function EmailOutbox() {
   const [emails, setEmails] = useState<any[]>([]);
+  const [type, setType] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get<any[]>("/api/admin/emails").then((e) => {
+    setLoading(true);
+    const params = type ? `?type=${type}` : "";
+    api.get<any[]>(`/api/admin/emails${params}`).then((e) => {
       setEmails(e);
       setLoading(false);
     });
-  }, []);
-
-  if (loading) return <LoadingState />;
+  }, [type]);
 
   return (
     <div>
       <PageHeader title="Sent Emails" subtitle="Credential and notification emails — delivered via SMTP when configured, otherwise recorded here." />
-      {emails.length === 0 ? <EmptyState message="No emails sent yet." /> : (
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {TYPE_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setType(f.value)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${type === f.value ? "bg-navy-900 text-white" : "bg-slate-100 text-slate-600"}`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <LoadingState /> : emails.length === 0 ? <EmptyState message="No emails in this category." /> : (
         <div className="space-y-2">
           {emails.map((e) => (
             <Card key={e.id} className="p-4">

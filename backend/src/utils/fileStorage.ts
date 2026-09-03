@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 // middleware — files are never served from a public path.
 const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads", "kyc");
 
-export type DocumentKind = "nidFront" | "nidBack" | "signature";
+export type DocumentKind = "nidFront" | "nidBack" | "signature" | "ownPhoto";
 
 export function ensureUploadDir(applicationId: string): string {
   const dir = path.join(UPLOAD_ROOT, applicationId);

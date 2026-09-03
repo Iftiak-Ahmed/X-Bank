@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
-import { Card, PageHeader, PrimaryButton, SecondaryButton, money } from "../../components/Shared";
+import { Card, EmptyState, PageHeader, PrimaryButton, SecondaryButton, money } from "../../components/Shared";
 
 interface Account {
   id: string;
@@ -10,10 +11,18 @@ interface Account {
   currency: string;
 }
 
+interface Beneficiary {
+  id: string;
+  beneficiaryName: string;
+  accountNumber: string;
+}
+
 type Step = "form" | "confirm" | "result";
 
 export default function Transfer() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
+  const [loadingBeneficiaries, setLoadingBeneficiaries] = useState(true);
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,14 +32,14 @@ export default function Transfer() {
     senderAccountId: "",
     receiverAccountNumber: "",
     amount: "",
-    purpose: "",
-    description: "",
+    remark: "",
   });
 
   useEffect(() => {
-    api.get<Account[]>("/api/client/accounts").then((accs) => {
-      setAccounts(accs);
-      if (accs[0]) setForm((f) => ({ ...f, senderAccountId: accs[0].id }));
+    api.get<Account[]>("/api/client/accounts").then((accs) => setAccounts(accs.filter((a) => a.accountType !== "dps")));
+    api.get<Beneficiary[]>("/api/client/beneficiaries").then((b) => {
+      setBeneficiaries(b);
+      setLoadingBeneficiaries(false);
     });
   }, []);
 
@@ -46,8 +55,7 @@ export default function Transfer() {
         senderAccountId: form.senderAccountId,
         receiverAccountNumber: form.receiverAccountNumber,
         amount: Number(form.amount),
-        purpose: form.purpose,
-        description: form.description,
+        purpose: form.remark,
       });
       setResult({ status: res.status, reference: res.reference, amount: res.amount });
       setStep("result");
@@ -60,6 +68,7 @@ export default function Transfer() {
   }
 
   const selectedAccount = accounts.find((a) => a.id === form.senderAccountId);
+  const selectedBeneficiary = beneficiaries.find((b) => b.accountNumber === form.receiverAccountNumber);
 
   if (step === "result" && result) {
     const approved = result.status === "approved";
@@ -77,7 +86,7 @@ export default function Transfer() {
           </p>
           <p className="mt-4 font-mono text-sm text-slate-400">{result.reference}</p>
           <p className="mt-1 font-serif text-2xl font-semibold text-navy-900">{money(result.amount)}</p>
-          <SecondaryButton className="mt-6" onClick={() => { setStep("form"); setForm((f) => ({ ...f, receiverAccountNumber: "", amount: "", purpose: "", description: "" })); }}>
+          <SecondaryButton className="mt-6" onClick={() => { setStep("form"); setForm((f) => ({ ...f, amount: "", remark: "" })); }}>
             Make another transfer
           </SecondaryButton>
         </Card>
@@ -92,10 +101,9 @@ export default function Transfer() {
         <Card className="p-6">
           <dl className="space-y-3 text-sm">
             <Row label="From" value={`${selectedAccount?.accountType} · ${selectedAccount?.accountNumber}`} />
-            <Row label="To account" value={form.receiverAccountNumber} />
+            <Row label="To" value={selectedBeneficiary ? `${selectedBeneficiary.beneficiaryName} · ${selectedBeneficiary.accountNumber}` : form.receiverAccountNumber} />
             <Row label="Amount" value={money(Number(form.amount))} />
-            <Row label="Purpose" value={form.purpose} />
-            {form.description && <Row label="Description" value={form.description} />}
+            <Row label="Remark" value={form.remark} />
           </dl>
           {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
           <div className="mt-6 flex gap-3">
@@ -113,42 +121,65 @@ export default function Transfer() {
     <div className="mx-auto max-w-md">
       <PageHeader title="Transfer money" subtitle="Send funds to another X Bank account." />
       <Card className="p-6">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setStep("confirm");
-          }}
-          className="space-y-4"
-        >
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">From account</label>
+        {!loadingBeneficiaries && beneficiaries.length === 0 ? (
+          <EmptyState message="You haven't added any beneficiaries yet." />
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setStep("confirm");
+            }}
+            className="space-y-4"
+          >
+            {selectedAccount && (
+              <p className="text-xs text-slate-500">
+                Available balance: <span className="font-semibold text-navy-900">{money(selectedAccount.balance, selectedAccount.currency)}</span>
+              </p>
+            )}
             <select
+              required
               value={form.senderAccountId}
               onChange={(e) => update("senderAccountId", e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm ${form.senderAccountId ? "text-navy-900" : "text-slate-400"}`}
             >
+              <option value="" disabled>Select account</option>
               {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.accountType} · {a.accountNumber} · {money(a.balance, a.currency)}
+                <option key={a.id} value={a.id} className="text-navy-900">
+                  {a.accountType} · {a.accountNumber}
                 </option>
               ))}
             </select>
-          </div>
-          <Field label="Beneficiary account number" value={form.receiverAccountNumber} onChange={(v) => update("receiverAccountNumber", v)} />
-          <Field label="Amount" type="number" value={form.amount} onChange={(v) => update("amount", v)} />
-          <Field label="Purpose" value={form.purpose} onChange={(v) => update("purpose", v)} />
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Description (optional)</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => update("description", e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              rows={2}
+            <select
+              required
+              value={form.receiverAccountNumber}
+              onChange={(e) => update("receiverAccountNumber", e.target.value)}
+              className={`w-full rounded-lg border border-slate-300 px-3 py-2 text-sm ${form.receiverAccountNumber ? "text-navy-900" : "text-slate-400"}`}
+            >
+              <option value="" disabled>Select beneficiary</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.accountNumber} className="text-navy-900">
+                  {b.beneficiaryName} · {b.accountNumber}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              required
+              placeholder="Amount"
+              value={form.amount}
+              onChange={(e) => update("amount", e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <PrimaryButton type="submit" className="w-full">Continue</PrimaryButton>
-        </form>
+            <Field label="Remark" value={form.remark} onChange={(v) => update("remark", v)} />
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <PrimaryButton type="submit" className="w-full">Continue</PrimaryButton>
+          </form>
+        )}
+        {!loadingBeneficiaries && beneficiaries.length === 0 && (
+          <Link to="/beneficiaries" className="mt-4 block text-center text-sm font-semibold text-teal-700">
+            Add a beneficiary →
+          </Link>
+        )}
       </Card>
     </div>
   );
