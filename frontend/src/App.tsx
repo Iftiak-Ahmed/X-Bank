@@ -1,0 +1,196 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AppShell } from "./layouts/AppShell";
+
+import Landing from "./pages/public/Landing";
+import Login from "./pages/public/Login";
+import Register from "./pages/public/Register";
+import ChangePassword from "./pages/public/ChangePassword";
+import ForgotPassword from "./pages/public/ForgotPassword";
+
+import ClientDashboard from "./pages/client/ClientDashboard";
+import Accounts from "./pages/client/Accounts";
+import Transfer from "./pages/client/Transfer";
+import Transactions from "./pages/client/Transactions";
+import Beneficiaries from "./pages/client/Beneficiaries";
+import Kyc from "./pages/client/Kyc";
+import Notifications from "./pages/client/Notifications";
+import Profile from "./pages/client/Profile";
+import Security from "./pages/client/Security";
+
+import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
+import Customers from "./pages/employee/Customers";
+import CustomerDetail from "./pages/employee/CustomerDetail";
+import CashIn from "./pages/employee/CashIn";
+
+import ComplianceDashboard from "./pages/compliance/ComplianceDashboard";
+import TransactionMonitoring from "./pages/compliance/TransactionMonitoring";
+import TransactionDetail from "./pages/compliance/TransactionDetail";
+import AlertsQueue from "./pages/compliance/AlertsQueue";
+import AlertDetail from "./pages/compliance/AlertDetail";
+import CustomerRiskProfile from "./pages/compliance/CustomerRiskProfile";
+import KycMonitoring from "./pages/compliance/KycMonitoring";
+import Evidence from "./pages/compliance/Evidence";
+import Controls from "./pages/compliance/Controls";
+import ComplianceFrameworks from "./pages/compliance/Frameworks";
+import FrameworkDetail from "./pages/compliance/FrameworkDetail";
+import ControlDetail from "./pages/compliance/ControlDetail";
+import Matrix from "./pages/compliance/Matrix";
+import Reports from "./pages/compliance/Reports";
+import AuditLogs from "./pages/compliance/AuditLogs";
+
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import Users from "./pages/admin/Users";
+import Rules from "./pages/admin/Rules";
+import Applications from "./pages/admin/Applications";
+import ApplicationDetail from "./pages/admin/ApplicationDetail";
+import AdminFrameworks from "./pages/admin/Frameworks";
+import EmailOutbox from "./pages/admin/EmailOutbox";
+import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
+import NotificationsList from "./pages/shared/NotificationsList";
+import StaffProfile from "./pages/shared/StaffProfile";
+
+const CLIENT_NAV = [
+  { label: "Dashboard", to: "/dashboard" },
+  { label: "Accounts", to: "/accounts" },
+  { label: "Transfer", to: "/transfer" },
+  { label: "Transactions", to: "/transactions" },
+  { label: "Beneficiaries", to: "/beneficiaries" },
+  { label: "KYC", to: "/kyc" },
+  { label: "Notifications", to: "/notifications" },
+  { label: "Security", to: "/security" },
+];
+
+const EMPLOYEE_NAV = [
+  { label: "Dashboard", to: "/employee/dashboard" },
+  { label: "Customers", to: "/employee/customers" },
+  { label: "Cash In", to: "/employee/cash-in" },
+  { label: "Notifications", to: "/employee/notifications" },
+];
+
+const COMPLIANCE_NAV = [
+  { label: "Dashboard", to: "/compliance/dashboard" },
+  { label: "Transactions", to: "/compliance/transactions" },
+  { label: "Alerts", to: "/compliance/alerts" },
+  { label: "KYC Monitoring", to: "/compliance/kyc" },
+  { label: "Evidence", to: "/compliance/evidence" },
+  { label: "Frameworks", to: "/compliance/frameworks" },
+  { label: "Compliance Matrix", to: "/compliance/matrix" },
+  { label: "Compliance Controls", to: "/compliance/controls" },
+  { label: "Audit Logs", to: "/compliance/audit-logs" },
+  { label: "Reports", to: "/compliance/reports" },
+  { label: "Notifications", to: "/compliance/notifications" },
+];
+
+const ADMIN_NAV = [
+  { label: "Dashboard", to: "/admin/dashboard" },
+  { label: "Client Applications", to: "/admin/applications" },
+  { label: "Users", to: "/admin/users" },
+  { label: "Compliance Rules", to: "/admin/rules" },
+  { label: "Frameworks", to: "/admin/frameworks" },
+  { label: "Sent Emails", to: "/admin/emails" },
+  { label: "Notifications", to: "/admin/notifications" },
+  { label: "Audit Logs", to: "/admin/audit-logs" },
+];
+
+function ChangePasswordRoute() {
+  const { profile, loading } = useAuth();
+  if (loading) return <div className="flex h-screen items-center justify-center text-slate-500">Loading…</div>;
+  if (!profile) return <Navigate to="/login" replace />;
+  return <ChangePassword />;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/change-password" element={<ChangePasswordRoute />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+
+          <Route
+            element={
+              <ProtectedRoute roles={["client"]}>
+                <AppShell navItems={CLIENT_NAV} roleLabel="Client" badgeColor="bg-slate-700 text-slate-100" profilePath="/profile" />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/dashboard" element={<ClientDashboard />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/transfer" element={<Transfer />} />
+            <Route path="/transactions" element={<Transactions />} />
+            <Route path="/beneficiaries" element={<Beneficiaries />} />
+            <Route path="/kyc" element={<Kyc />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/security" element={<Security />} />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute roles={["employee"]}>
+                <AppShell navItems={EMPLOYEE_NAV} roleLabel="Employee" badgeColor="bg-navy-800 text-navy-100" profilePath="/employee/profile" />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+            <Route path="/employee/customers" element={<Customers />} />
+            <Route path="/employee/customers/:id" element={<CustomerDetail />} />
+            <Route path="/employee/cash-in" element={<CashIn />} />
+            <Route path="/employee/notifications" element={<NotificationsList />} />
+            <Route path="/employee/profile" element={<StaffProfile />} />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute roles={["compliance_officer", "compliance_manager"]}>
+                <AppShell navItems={COMPLIANCE_NAV} roleLabel="Compliance" badgeColor="bg-teal-600 text-teal-50" profilePath="/compliance/profile" />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/compliance/dashboard" element={<ComplianceDashboard />} />
+            <Route path="/compliance/transactions" element={<TransactionMonitoring />} />
+            <Route path="/compliance/transactions/:id" element={<TransactionDetail />} />
+            <Route path="/compliance/alerts" element={<AlertsQueue />} />
+            <Route path="/compliance/alerts/:id" element={<AlertDetail />} />
+            <Route path="/compliance/customers/:id" element={<CustomerRiskProfile />} />
+            <Route path="/compliance/kyc" element={<KycMonitoring />} />
+            <Route path="/compliance/evidence" element={<Evidence />} />
+            <Route path="/compliance/controls" element={<Controls />} />
+            <Route path="/compliance/controls/:id" element={<ControlDetail />} />
+            <Route path="/compliance/frameworks" element={<ComplianceFrameworks />} />
+            <Route path="/compliance/frameworks/:id" element={<FrameworkDetail />} />
+            <Route path="/compliance/matrix" element={<Matrix />} />
+            <Route path="/compliance/reports" element={<Reports />} />
+            <Route path="/compliance/notifications" element={<NotificationsList />} />
+            <Route path="/compliance/audit-logs" element={<AuditLogs />} />
+            <Route path="/compliance/profile" element={<StaffProfile />} />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute roles={["admin"]}>
+                <AppShell navItems={ADMIN_NAV} roleLabel="Admin" badgeColor="bg-[#6a4c93] text-purple-50" profilePath="/admin/profile" />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/applications" element={<Applications />} />
+            <Route path="/admin/applications/:id" element={<ApplicationDetail />} />
+            <Route path="/admin/users" element={<Users />} />
+            <Route path="/admin/rules" element={<Rules />} />
+            <Route path="/admin/frameworks" element={<AdminFrameworks />} />
+            <Route path="/admin/emails" element={<EmailOutbox />} />
+            <Route path="/admin/notifications" element={<NotificationsList />} />
+            <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
+            <Route path="/admin/profile" element={<StaffProfile />} />
+          </Route>
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
