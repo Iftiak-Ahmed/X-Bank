@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../../lib/api";
 import { Card, LoadingState, PageHeader, money, formatDate } from "../../components/Shared";
 import { RiskChip, StatusPill } from "../../components/RiskChip";
@@ -57,10 +57,8 @@ export default function AlertDetail() {
                 <Row label="Amount" value={money(transaction.amount, transaction.currency)} />
                 <Row label="Purpose" value={transaction.purpose ?? "—"} />
                 <Row label="Location" value={transaction.location} />
+                <Row label="Risk Score" value={String(alert.riskScore ?? "—")} />
               </dl>
-              <Link to={`/admin/bank-audit`} className="mt-3 inline-block text-xs font-semibold text-teal-700">
-                Open Bank Audit →
-              </Link>
             </>
           ) : (
             <p className="mt-3 text-sm text-slate-400">No linked transaction.</p>
