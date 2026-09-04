@@ -52,21 +52,23 @@ export default function ControlDetail() {
           {recentResults.length === 0 ? (
             <EmptyState message="This control hasn't been evaluated against any transaction yet." />
           ) : (
-            <table className="mt-3 w-full">
-              <thead><tr className="border-b border-slate-100"><Th>When</Th><Th>Transaction</Th><Th>Result</Th><Th>Reason</Th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {recentResults.map((r: any) => (
-                  <tr key={r.id}>
-                    <Td>{formatDate(r.createdAt)}</Td>
-                    <Td>
-                      <Link to={`/compliance/transactions/${r.transactionId}`} className="font-mono text-xs text-teal-700">{r.transactionId?.slice(0, 10)}</Link>
-                    </Td>
-                    <Td><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RESULT_CLASS[r.result]}`}>{RESULT_LABEL[r.result]}</span></Td>
-                    <Td className="whitespace-normal text-xs text-slate-500">{r.reason}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="mt-3 w-full">
+                <thead><tr className="border-b border-slate-100"><Th>When</Th><Th>Transaction</Th><Th>Result</Th><Th>Reason</Th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recentResults.map((r: any) => (
+                    <tr key={r.id}>
+                      <Td>{formatDate(r.createdAt)}</Td>
+                      <Td>
+                        <Link to={`/compliance/transactions/${r.transactionId}`} className="font-mono text-xs text-teal-700">{r.transactionId?.slice(0, 10)}</Link>
+                      </Td>
+                      <Td><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RESULT_CLASS[r.result]}`}>{RESULT_LABEL[r.result]}</span></Td>
+                      <Td className="whitespace-normal text-xs text-slate-500">{r.reason}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <h3 className="mt-6 text-xs font-semibold uppercase tracking-wide text-slate-400">Related alerts</h3>

@@ -144,7 +144,7 @@ export default function Register() {
           <Logo className="h-10 w-auto" />
         </Link>
 
-        <div className="rounded-xl border border-slate-300 bg-white p-8 shadow-sm">
+        <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm sm:p-8">
           <div className="mb-6 flex items-center gap-2 text-xs font-semibold text-slate-400">
             <Step n={1} active={step === 1} done={step > 1} label="Personal" />
             <div className="h-px flex-1 bg-slate-200" />
@@ -157,7 +157,7 @@ export default function Register() {
             {step === 1 && (
               <div className="space-y-4">
                 <Field label="Full name" value={form.fullName} onChange={(v) => update("fullName", v)} />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Date of birth" type="date" value={form.dateOfBirth} onChange={(v) => update("dateOfBirth", v)} />
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Gender</label>
@@ -188,7 +188,7 @@ export default function Register() {
                   onChange={(v) => update("phone", v.replace(/\D/g, "").slice(0, 11))}
                 />
                 <AddressSelector value={address} onChange={updateAddress} />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Occupation</label>
                     <select
@@ -251,7 +251,7 @@ export default function Register() {
                   {Object.entries(form).map(([k, v]) => (
                     <div key={k} className="flex justify-between border-b border-slate-100 pb-1">
                       <dt className="capitalize text-slate-500">{k.replace(/([A-Z])/g, " $1")}</dt>
-                      <dd className="font-medium text-navy-900">{v || "â€”"}</dd>
+                      <dd className="font-medium text-navy-900">{v || "—"}</dd>
                     </div>
                   ))}
                   <div className="flex justify-between border-b border-slate-100 pb-1">
@@ -291,7 +291,7 @@ function AddressSelector({ value, onChange }: { value: AddressSelection; onChang
   return (
     <div>
       <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Address</label>
-      <div className="mt-1 grid grid-cols-2 gap-3">
+      <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <select
           required
           value={value.divisionId}
@@ -342,7 +342,7 @@ function Step({ n, active, done, label }: { n: number; active: boolean; done: bo
   return (
     <div className="flex items-center gap-1.5">
       <span className={`flex h-5 w-5 items-center justify-center rounded-full ${done ? "bg-teal-600 text-white" : active ? "bg-navy-900 text-white" : "bg-slate-200 text-slate-500"}`}>
-        {done ? "âœ“" : n}
+        {done ? "✓" : n}
       </span>
       <span className={active ? "text-navy-900" : ""}>{label}</span>
     </div>

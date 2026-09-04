@@ -5,14 +5,14 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Logo className="h-9 w-auto" />
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
+          <Logo className="h-7 w-auto sm:h-9" />
           <nav className="hidden items-center gap-8 text-sm font-medium text-slate-600 md:flex">
             <a href="#contact" className="hover:text-navy-900">Contact</a>
           </nav>
-          <div className="flex items-center gap-3">
-            <Link to="/login" className="text-sm font-semibold text-navy-900">Log in</Link>
-            <Link to="/register" className="rounded-lg bg-navy-900 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-800">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link to="/login" className="whitespace-nowrap text-sm font-semibold text-navy-900">Log in</Link>
+            <Link to="/register" className="whitespace-nowrap rounded-lg bg-navy-900 px-3 py-2 text-sm font-semibold text-white hover:bg-navy-800 sm:px-4">
               Open an account
             </Link>
           </div>

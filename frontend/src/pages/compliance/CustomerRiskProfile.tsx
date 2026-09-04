@@ -39,39 +39,43 @@ export default function CustomerRiskProfile() {
       <Card className="mt-6">
         <div className="border-b border-slate-100 px-5 py-4"><h2 className="font-serif text-lg font-semibold text-navy-900">Recent transactions</h2></div>
         {transactions.length === 0 ? <EmptyState message="No transactions." /> : (
-          <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Date</Th><Th>Amount</Th><Th>Risk</Th><Th>Status</Th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {transactions.slice(0, 15).map((t: any) => (
-                <tr key={t.id}>
-                  <Td>{formatDate(t.createdAt)}</Td>
-                  <Td>{money(t.amount, t.currency)}</Td>
-                  <Td><RiskChip level={t.riskLevel} /></Td>
-                  <Td><StatusPill status={t.status} /></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><Th>Date</Th><Th>Amount</Th><Th>Risk</Th><Th>Status</Th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {transactions.slice(0, 15).map((t: any) => (
+                  <tr key={t.id}>
+                    <Td>{formatDate(t.createdAt)}</Td>
+                    <Td>{money(t.amount, t.currency)}</Td>
+                    <Td><RiskChip level={t.riskLevel} /></Td>
+                    <Td><StatusPill status={t.status} /></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
       <Card className="mt-6">
         <div className="border-b border-slate-100 px-5 py-4"><h2 className="font-serif text-lg font-semibold text-navy-900">Alert history</h2></div>
         {alerts.length === 0 ? <EmptyState message="No prior alerts." /> : (
-          <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Created</Th><Th>Rule</Th><Th>Risk</Th><Th>Status</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {alerts.map((a: any) => (
-                <tr key={a.id}>
-                  <Td>{formatDate(a.createdAt)}</Td>
-                  <Td>{a.primaryRuleCode}</Td>
-                  <Td><RiskChip level={a.riskLevel} /></Td>
-                  <Td><StatusPill status={a.status} /></Td>
-                  <Td><Link to={`/compliance/alerts/${a.id}`} className="text-xs font-semibold text-teal-700">Open</Link></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><Th>Created</Th><Th>Rule</Th><Th>Risk</Th><Th>Status</Th><Th></Th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {alerts.map((a: any) => (
+                  <tr key={a.id}>
+                    <Td>{formatDate(a.createdAt)}</Td>
+                    <Td>{a.primaryRuleCode}</Td>
+                    <Td><RiskChip level={a.riskLevel} /></Td>
+                    <Td><StatusPill status={a.status} /></Td>
+                    <Td><Link to={`/compliance/alerts/${a.id}`} className="text-xs font-semibold text-teal-700">Open</Link></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

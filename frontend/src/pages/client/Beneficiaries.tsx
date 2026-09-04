@@ -92,18 +92,20 @@ export default function Beneficiaries() {
         {loading ? <LoadingState /> : items.length === 0 ? (
           <EmptyState message="No beneficiaries yet." />
         ) : (
-          <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Name</Th><Th>Account</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {items.map((b) => (
-                <tr key={b.id}>
-                  <Td>{b.beneficiaryName}</Td>
-                  <Td className="font-mono text-xs">{b.accountNumber}</Td>
-                  <Td><button onClick={() => remove(b.id)} className="text-xs font-semibold text-red-600">Remove</button></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><Th>Name</Th><Th>Account</Th><Th></Th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {items.map((b) => (
+                  <tr key={b.id}>
+                    <Td>{b.beneficiaryName}</Td>
+                    <Td className="font-mono text-xs">{b.accountNumber}</Td>
+                    <Td><button onClick={() => remove(b.id)} className="text-xs font-semibold text-red-600">Remove</button></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

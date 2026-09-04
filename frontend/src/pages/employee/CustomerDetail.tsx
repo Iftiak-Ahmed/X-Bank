@@ -69,19 +69,21 @@ export default function CustomerDetail() {
         {transactions.length === 0 ? (
           <EmptyState message="No transactions." />
         ) : (
-          <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Date</Th><Th>Reference</Th><Th>Amount</Th><Th>Status</Th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {transactions.map((t) => (
-                <tr key={t.id}>
-                  <Td>{formatDate(t.createdAt)}</Td>
-                  <Td className="font-mono text-xs">{t.reference}</Td>
-                  <Td>{money(t.amount, t.currency)}</Td>
-                  <Td><StatusPill status={t.status} /></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><Th>Date</Th><Th>Reference</Th><Th>Amount</Th><Th>Status</Th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {transactions.map((t) => (
+                  <tr key={t.id}>
+                    <Td>{formatDate(t.createdAt)}</Td>
+                    <Td className="font-mono text-xs">{t.reference}</Td>
+                    <Td>{money(t.amount, t.currency)}</Td>
+                    <Td><StatusPill status={t.status} /></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

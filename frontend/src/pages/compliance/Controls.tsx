@@ -106,28 +106,30 @@ export default function Controls() {
                               {violated.length === 0 ? (
                                 <EmptyState message="No violations recorded for this framework yet." />
                               ) : (
-                                <table className="w-full table-fixed">
-                                  <thead>
-                                    <tr className="border-b border-slate-100 bg-slate-50">
-                                      <Th className="w-24">Control</Th>
-                                      <Th className="w-1/3">Name</Th>
-                                      <Th>Failures</Th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {violated.map((c: any) => (
-                                      <tr key={c.id}>
-                                        <Td className="align-top py-3 font-mono text-xs">
-                                          <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
-                                        </Td>
-                                        <Td className="align-top py-3">
-                                          <Link to={`/compliance/controls/${c.id}`} className="font-semibold text-teal-700" style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</Link>
-                                        </Td>
-                                        <Td className="align-top py-3">{c.resultCounts.fail}</Td>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full table-fixed">
+                                    <thead>
+                                      <tr className="border-b border-slate-100 bg-slate-50">
+                                        <Th className="w-24">Control</Th>
+                                        <Th className="w-1/3">Name</Th>
+                                        <Th>Failures</Th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {violated.map((c: any) => (
+                                        <tr key={c.id}>
+                                          <Td className="align-top py-3 font-mono text-xs">
+                                            <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
+                                          </Td>
+                                          <Td className="align-top py-3">
+                                            <Link to={`/compliance/controls/${c.id}`} className="font-semibold text-teal-700" style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</Link>
+                                          </Td>
+                                          <Td className="align-top py-3">{c.resultCounts.fail}</Td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -138,50 +140,52 @@ export default function Controls() {
                               {detail.controls.length === 0 ? (
                                 <EmptyState message="No controls in this framework." />
                               ) : (
-                                <table className="w-full table-fixed">
-                                  <thead>
-                                    <tr className="border-b border-slate-100 bg-slate-50">
-                                      <Th className="w-24">Control</Th>
-                                      <Th className="w-1/4">Name</Th>
-                                      <Th className="w-14">Pass</Th>
-                                      <Th className="w-14">Fail</Th>
-                                      <Th className="w-16">Review</Th>
-                                      <Th className="w-14">N/A</Th>
-                                      <Th className="w-20">Status</Th>
-                                      <Th className="w-40"></Th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {detail.controls.map((c: any) => (
-                                      <tr key={c.id}>
-                                        <Td className="align-top py-3 font-mono text-xs">
-                                          <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
-                                        </Td>
-                                        <Td className="align-top py-3">
-                                          <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</div>
-                                        </Td>
-                                        <Td className="align-top py-3 text-risk-low">{c.resultCounts.pass}</Td>
-                                        <Td className="align-top py-3 text-risk-critical">{c.resultCounts.fail}</Td>
-                                        <Td className="align-top py-3 text-risk-medium">{c.resultCounts.needs_review}</Td>
-                                        <Td className="align-top py-3 text-slate-400">{c.resultCounts.not_applicable}</Td>
-                                        <Td className="align-top py-3"><StatusPill status={c.status} /></Td>
-                                        <Td className="align-top py-3">
-                                          <div className="flex items-center gap-3">
-                                            <button
-                                              type="button"
-                                              disabled={updatingControlId === c.id}
-                                              onClick={() => toggleStatus(f.id, c)}
-                                              className={`rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${c.status === "active" ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-teal-50 text-teal-700 hover:bg-teal-100"}`}
-                                            >
-                                              {updatingControlId === c.id ? "…" : c.status === "active" ? "Deactivate" : "Activate"}
-                                            </button>
-                                            <Link to={`/compliance/controls/${c.id}`} className="text-xs font-semibold text-teal-700">Detail</Link>
-                                          </div>
-                                        </Td>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full table-fixed">
+                                    <thead>
+                                      <tr className="border-b border-slate-100 bg-slate-50">
+                                        <Th className="w-24">Control</Th>
+                                        <Th className="w-1/4">Name</Th>
+                                        <Th className="w-14">Pass</Th>
+                                        <Th className="w-14">Fail</Th>
+                                        <Th className="w-16">Review</Th>
+                                        <Th className="w-14">N/A</Th>
+                                        <Th className="w-20">Status</Th>
+                                        <Th className="w-40"></Th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {detail.controls.map((c: any) => (
+                                        <tr key={c.id}>
+                                          <Td className="align-top py-3 font-mono text-xs">
+                                            <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
+                                          </Td>
+                                          <Td className="align-top py-3">
+                                            <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</div>
+                                          </Td>
+                                          <Td className="align-top py-3 text-risk-low">{c.resultCounts.pass}</Td>
+                                          <Td className="align-top py-3 text-risk-critical">{c.resultCounts.fail}</Td>
+                                          <Td className="align-top py-3 text-risk-medium">{c.resultCounts.needs_review}</Td>
+                                          <Td className="align-top py-3 text-slate-400">{c.resultCounts.not_applicable}</Td>
+                                          <Td className="align-top py-3"><StatusPill status={c.status} /></Td>
+                                          <Td className="align-top py-3">
+                                            <div className="flex items-center gap-3">
+                                              <button
+                                                type="button"
+                                                disabled={updatingControlId === c.id}
+                                                onClick={() => toggleStatus(f.id, c)}
+                                                className={`rounded-full px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${c.status === "active" ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-teal-50 text-teal-700 hover:bg-teal-100"}`}
+                                              >
+                                                {updatingControlId === c.id ? "…" : c.status === "active" ? "Deactivate" : "Activate"}
+                                              </button>
+                                              <Link to={`/compliance/controls/${c.id}`} className="text-xs font-semibold text-teal-700">Detail</Link>
+                                            </div>
+                                          </Td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
                               )}
                             </div>
                           </div>

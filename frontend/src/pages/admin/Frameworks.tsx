@@ -131,34 +131,36 @@ export default function Frameworks() {
                     ) : (controlsByFramework[f.id]?.length ?? 0) === 0 ? (
                       <EmptyState message="No controls in this framework yet." />
                     ) : (
-                      <table className="w-full table-fixed">
-                        <thead>
-                          <tr className="border-b border-slate-100 bg-slate-50">
-                            <Th className="w-24">Control ID</Th>
-                            <Th className="w-1/4">Name</Th>
-                            <Th className="w-28">Category</Th>
-                            <Th>Description</Th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {controlsByFramework[f.id].map((c) => (
-                            <tr key={c.id}>
-                              <Td className="align-top py-4 font-mono text-xs">
-                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
-                              </Td>
-                              <Td className="align-top py-4 font-medium text-navy-900">
-                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</div>
-                              </Td>
-                              <Td className="align-top py-4 text-xs text-slate-500">
-                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.category}</div>
-                              </Td>
-                              <Td className="align-top py-4 text-sm leading-relaxed text-slate-500">
-                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.requirement}</div>
-                              </Td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full table-fixed">
+                          <thead>
+                            <tr className="border-b border-slate-100 bg-slate-50">
+                              <Th className="w-24">Control ID</Th>
+                              <Th className="w-1/4">Name</Th>
+                              <Th className="w-28">Category</Th>
+                              <Th>Description</Th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {controlsByFramework[f.id].map((c) => (
+                              <tr key={c.id}>
+                                <Td className="align-top py-4 font-mono text-xs">
+                                  <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
+                                </Td>
+                                <Td className="align-top py-4 font-medium text-navy-900">
+                                  <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</div>
+                                </Td>
+                                <Td className="align-top py-4 text-xs text-slate-500">
+                                  <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.category}</div>
+                                </Td>
+                                <Td className="align-top py-4 text-sm leading-relaxed text-slate-500">
+                                  <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.requirement}</div>
+                                </Td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}

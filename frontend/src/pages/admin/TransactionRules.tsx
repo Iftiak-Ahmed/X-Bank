@@ -222,38 +222,40 @@ export default function TransactionRules() {
       <Card className="mt-6">
         <div className="border-b border-slate-100 px-5 py-4"><h2 className="font-serif text-lg font-semibold text-navy-900">Rules</h2></div>
         {loading ? <LoadingState /> : rules.length === 0 ? <EmptyState message="No transaction rules yet." /> : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <Th>Rule Name</Th>
-                <Th>Transaction Type</Th>
-                <Th>Limit</Th>
-                <Th>Status</Th>
-                <Th></Th>
-                <Th></Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rules.map((r) => (
-                <tr key={r.id}>
-                  <Td className="font-medium text-navy-900">{r.ruleName}</Td>
-                  <Td className="capitalize">{typeLabel(r.transactionType, TRANSACTION_TYPES)}</Td>
-                  <Td>{displayLimit(r)}</Td>
-                  <Td>
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${r.status === "active" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500"}`}>
-                      {r.status === "active" ? "Active" : "Inactive"}
-                    </span>
-                  </Td>
-                  <Td>
-                    <button onClick={() => startEdit(r)} className="text-xs font-semibold text-teal-700">Edit</button>
-                  </Td>
-                  <Td>
-                    <button onClick={() => deleteRule(r.id, r.ruleName)} className="text-xs font-semibold text-red-600">Delete</button>
-                  </Td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <Th>Rule Name</Th>
+                  <Th>Transaction Type</Th>
+                  <Th>Limit</Th>
+                  <Th>Status</Th>
+                  <Th></Th>
+                  <Th></Th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rules.map((r) => (
+                  <tr key={r.id}>
+                    <Td className="font-medium text-navy-900">{r.ruleName}</Td>
+                    <Td className="capitalize">{typeLabel(r.transactionType, TRANSACTION_TYPES)}</Td>
+                    <Td>{displayLimit(r)}</Td>
+                    <Td>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${r.status === "active" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500"}`}>
+                        {r.status === "active" ? "Active" : "Inactive"}
+                      </span>
+                    </Td>
+                    <Td>
+                      <button onClick={() => startEdit(r)} className="text-xs font-semibold text-teal-700">Edit</button>
+                    </Td>
+                    <Td>
+                      <button onClick={() => deleteRule(r.id, r.ruleName)} className="text-xs font-semibold text-red-600">Delete</button>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

@@ -41,19 +41,21 @@ export default function KycMonitoring() {
 
       <Card>
         {loading ? <LoadingState /> : records.length === 0 ? <EmptyState message="No KYC records." /> : (
-          <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Customer</Th><Th>Status</Th><Th>Submitted</Th><Th>Verified</Th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {records.map((r) => (
-                <tr key={r.id}>
-                  <Td className="font-mono text-xs">{r.customerId?.slice(0, 10)}</Td>
-                  <Td><StatusPill status={r.status} /></Td>
-                  <Td>{formatDate(r.submittedAt)}</Td>
-                  <Td>{formatDate(r.verifiedAt)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><Th>Customer</Th><Th>Status</Th><Th>Submitted</Th><Th>Verified</Th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {records.map((r) => (
+                  <tr key={r.id}>
+                    <Td className="font-mono text-xs">{r.customerId?.slice(0, 10)}</Td>
+                    <Td><StatusPill status={r.status} /></Td>
+                    <Td>{formatDate(r.submittedAt)}</Td>
+                    <Td>{formatDate(r.verifiedAt)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

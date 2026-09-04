@@ -65,25 +65,27 @@ export default function ComplianceDashboard() {
         {alerts.length === 0 ? (
           <EmptyState message="No alerts yet — normal activity flows straight through." />
         ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <Th>Created</Th><Th>Customer</Th><Th>Rule</Th><Th>Risk</Th><Th>Status</Th><Th></Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {alerts.map((a) => (
-                <tr key={a.id}>
-                  <Td>{formatDate(a.createdAt)}</Td>
-                  <Td className="font-mono text-xs">{a.customerId?.slice(0, 8) ?? "—"}</Td>
-                  <Td>{a.primaryRuleCode}</Td>
-                  <Td><RiskChip level={a.riskLevel} /> <span className="text-xs text-slate-400">{a.riskScore}</span></Td>
-                  <Td><StatusPill status={a.status} /></Td>
-                  <Td><Link to={`/compliance/alerts/${a.id}`} className="text-xs font-semibold text-teal-700">Investigate</Link></Td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <Th>Created</Th><Th>Customer</Th><Th>Rule</Th><Th>Risk</Th><Th>Status</Th><Th></Th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {alerts.map((a) => (
+                  <tr key={a.id}>
+                    <Td>{formatDate(a.createdAt)}</Td>
+                    <Td className="font-mono text-xs">{a.customerId?.slice(0, 8) ?? "—"}</Td>
+                    <Td>{a.primaryRuleCode}</Td>
+                    <Td><RiskChip level={a.riskLevel} /> <span className="text-xs text-slate-400">{a.riskScore}</span></Td>
+                    <Td><StatusPill status={a.status} /></Td>
+                    <Td><Link to={`/compliance/alerts/${a.id}`} className="text-xs font-semibold text-teal-700">Investigate</Link></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

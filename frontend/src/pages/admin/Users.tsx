@@ -133,62 +133,64 @@ export default function Users() {
         {loading ? <LoadingState /> : filteredUsers.length === 0 ? (
           <EmptyState message={users.length === 0 ? "No users." : "No users match your search."} />
         ) : (
-          <table className="w-full">
-            <thead><tr className="border-b border-slate-100"><Th>Name</Th><Th>Account Number</Th><Th>Role</Th><Th>Status</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredUsers.map((u) => (
-                <tr key={u.id}>
-                  <Td>{u.fullName ?? "—"}</Td>
-                  <Td className="font-mono text-xs">
-                    {(() => {
-                      const currentAccounts = (u.accounts ?? []).filter((a: any) => a.accountType === "current");
-                      if (!currentAccounts.length) return u.userId ?? "—";
-                      return currentAccounts.map((a: any) => a.accountNumber).join(", ");
-                    })()}
-                  </Td>
-                  <Td>{roleLabel(u.role)}</Td>
-                  <Td className="space-x-1.5">
-                    <StatusPill status={u.status} />
-                    {u.locked && <StatusPill status="locked" />}
-                  </Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        onClick={() => toggleStatus(u.id, u.status)}
-                        className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
-                      >
-                        {u.status === "active" ? "Suspend" : "Reactivate"}
-                      </button>
-                      {u.locked && (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="border-b border-slate-100"><Th>Name</Th><Th>Account Number</Th><Th>Role</Th><Th>Status</Th><Th></Th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredUsers.map((u) => (
+                  <tr key={u.id}>
+                    <Td>{u.fullName ?? "—"}</Td>
+                    <Td className="font-mono text-xs">
+                      {(() => {
+                        const currentAccounts = (u.accounts ?? []).filter((a: any) => a.accountType === "current");
+                        if (!currentAccounts.length) return u.userId ?? "—";
+                        return currentAccounts.map((a: any) => a.accountNumber).join(", ");
+                      })()}
+                    </Td>
+                    <Td>{roleLabel(u.role)}</Td>
+                    <Td className="space-x-1.5">
+                      <StatusPill status={u.status} />
+                      {u.locked && <StatusPill status="locked" />}
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-1.5">
                         <button
-                          onClick={() => unlockUser(u.id)}
-                          className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                          onClick={() => toggleStatus(u.id, u.status)}
+                          className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
                         >
-                          Unlock
+                          {u.status === "active" ? "Suspend" : "Reactivate"}
                         </button>
-                      )}
-                      {u.role !== "client" && (
-                        <button
-                          onClick={() => resetCredentials(u.id)}
-                          className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-                        >
-                          Reset credentials
-                        </button>
-                      )}
-                      {u.id !== profile?.uid && (
-                        <button
-                          onClick={() => deleteUser(u.id, u.email, u.role)}
-                          className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                        {u.locked && (
+                          <button
+                            onClick={() => unlockUser(u.id)}
+                            className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                          >
+                            Unlock
+                          </button>
+                        )}
+                        {u.role !== "client" && (
+                          <button
+                            onClick={() => resetCredentials(u.id)}
+                            className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                          >
+                            Reset credentials
+                          </button>
+                        )}
+                        {u.id !== profile?.uid && (
+                          <button
+                            onClick={() => deleteUser(u.id, u.email, u.role)}
+                            className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>
