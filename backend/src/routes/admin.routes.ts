@@ -23,10 +23,34 @@ adminRouter.use(requireAuth, requireRole("admin"));
 // approve or deny before a session token is ever issued.
 // ---------------------------------------------------------------------------
 
+// The requesting client gives up polling after ~5.3 minutes (see AuthContext's
+// APPROVAL_MAX_POLLS), but that's purely client-side — nothing ever updated the
+// Firestore doc, so an abandoned request (closed tab, expired session) stayed
+// "pending" forever and kept reappearing in the admin's approval panel on every
+// dashboard load. Lazily expire anything past that window here instead.
+const LOGIN_REQUEST_EXPIRY_MS = 6 * 60 * 1000;
+
 adminRouter.get("/login-requests", asyncHandler(async (req, res) => {
   const status = (req.query.status as string) ?? "pending";
   const snap = await db.collection("loginRequests").where("status", "==", status).orderBy("createdAt", "desc").limit(50).get();
-  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data(), customToken: undefined })));
+
+  if (status !== "pending") {
+    return res.json(snap.docs.map((d) => ({ id: d.id, ...d.data(), customToken: undefined })));
+  }
+
+  const now = Date.now();
+  const stillPending: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  const expired: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  for (const doc of snap.docs) {
+    const createdAtMs = doc.data().createdAt?.toMillis?.() ?? now;
+    (now - createdAtMs > LOGIN_REQUEST_EXPIRY_MS ? expired : stillPending).push(doc);
+  }
+  if (expired.length) {
+    const batch = db.batch();
+    expired.forEach((doc) => batch.update(doc.ref, { status: "expired", resolvedAt: FieldValue.serverTimestamp() }));
+    await batch.commit();
+  }
+  res.json(stillPending.map((d) => ({ id: d.id, ...d.data(), customToken: undefined })));
 }));
 
 adminRouter.post("/login-requests/:id/approve", asyncHandler(async (req, res) => {
