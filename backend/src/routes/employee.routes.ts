@@ -7,7 +7,7 @@ import { requireRole } from "../middleware/rbac";
 import { writeAuditLog } from "../utils/audit";
 import { asyncHandler } from "../utils/asyncHandler";
 import { generateReference } from "../utils/ids";
-import { readKycDocument, saveKycDocument, DocumentKind } from "../utils/fileStorage";
+import { readKycDocument, saveKycDocument, deleteKycDocument, DocumentKind } from "../utils/fileStorage";
 import { runComplianceCheck } from "../compliance/monitoringService";
 import { localDateKey } from "../utils/dateKey";
 
@@ -184,6 +184,37 @@ employeeRouter.get("/kyc/:kycId/document/:kind", asyncHandler(async (req, res) =
   res.setHeader("Content-Type", stored.mimeType);
   res.setHeader("Cache-Control", "private, no-store");
   res.send(stored.buffer);
+}));
+
+// Removes a wrongly-uploaded KYC document so the teller can immediately
+// re-upload the correct one (the "Upload" link only appears once a document
+// is missing/failed, so this is what clears a mistaken upload back to that state).
+employeeRouter.delete("/kyc/:kycId/document/:kind", asyncHandler(async (req, res) => {
+  const kind = req.params.kind as DocumentKind;
+  if (!KYC_DOCUMENT_KINDS.includes(kind)) return res.status(400).json({ error: "Invalid document kind." });
+
+  const ref = db.collection("kycRecords").doc(req.params.kycId);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: "Not found" });
+  const kyc = snap.data()!;
+  const doc = kyc.documents?.[kind];
+
+  if (doc?.filename && kyc.applicationId) {
+    await deleteKycDocument(kyc.applicationId, doc.filename);
+  }
+  await ref.update({ [`documents.${kind}`]: FieldValue.delete() });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "employee",
+    action: "kyc.document_removed",
+    resource: "kycRecords",
+    resourceId: req.params.kycId,
+    description: `Employee removed the ${kind} document for KYC record ${req.params.kycId}.`,
+    ip: req.ip,
+  });
+
+  res.status(204).end();
 }));
 
 // Lets a teller re-capture a KYC document at the counter when the one on file

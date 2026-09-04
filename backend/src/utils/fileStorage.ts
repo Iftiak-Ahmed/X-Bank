@@ -53,6 +53,10 @@ export async function saveKycDocument(
   return { filename, hash, mimeType: fitted.mimeType };
 }
 
+export async function deleteKycDocument(applicationId: string, filename: string): Promise<void> {
+  await db.collection("kycFiles").doc(docId(applicationId, filename)).delete();
+}
+
 export async function readKycDocument(applicationId: string, filename: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
   const snap = await db.collection("kycFiles").doc(docId(applicationId, filename)).get();
   if (!snap.exists) return null;

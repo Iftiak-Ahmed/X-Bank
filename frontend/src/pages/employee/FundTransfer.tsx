@@ -17,6 +17,7 @@ export default function FundTransfer() {
   const [senderImages, setSenderImages] = useState<Record<string, string>>({});
   const [senderImageErrors, setSenderImageErrors] = useState<Record<string, boolean>>({});
   const [uploadingKind, setUploadingKind] = useState<DocKind | null>(null);
+  const [removingKind, setRemovingKind] = useState<DocKind | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [senderError, setSenderError] = useState<string | null>(null);
   const [senderLooking, setSenderLooking] = useState(false);
@@ -76,6 +77,27 @@ export default function FundTransfer() {
       setUploadError(err.message ?? "Upload failed.");
     } finally {
       setUploadingKind(null);
+    }
+  }
+
+  async function removeSenderDocument(kind: DocKind) {
+    if (!sender?.kyc) return;
+    const kycId = sender.kyc.id;
+    setUploadError(null);
+    setRemovingKind(kind);
+    try {
+      await api.delete(`/api/employee/kyc/${kycId}/document/${kind}`);
+      setSenderImages((prev) => {
+        const next = { ...prev };
+        delete next[kind];
+        return next;
+      });
+      setSenderImageErrors((prev) => ({ ...prev, [kind]: false }));
+      setSender((prev) => (prev && prev.kyc ? { ...prev, kyc: { ...prev.kyc, hasDocuments: { ...prev.kyc.hasDocuments, [kind]: false } } } : prev));
+    } catch (err: any) {
+      setUploadError(err.message ?? "Remove failed.");
+    } finally {
+      setRemovingKind(null);
     }
   }
 
@@ -164,7 +186,9 @@ export default function FundTransfer() {
                         available={sender.kyc!.hasDocuments[kind]}
                         failed={senderImageErrors[kind]}
                         uploading={uploadingKind === kind}
+                        removing={removingKind === kind}
                         onUpload={(file) => uploadSenderDocument(kind, file)}
+                        onRemove={() => removeSenderDocument(kind)}
                       />
                     ))}
                   </div>
@@ -248,16 +272,21 @@ function DocPreview({
   available,
   failed,
   uploading,
+  removing,
   onUpload,
+  onRemove,
 }: {
   label: string;
   src?: string;
   available: boolean;
   failed?: boolean;
   uploading?: boolean;
+  removing?: boolean;
   onUpload: (file: File) => void;
+  onRemove: () => void;
 }) {
   const needsUpload = !available || failed;
+  const busy = uploading || removing;
 
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -270,6 +299,8 @@ function DocPreview({
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
         {uploading ? (
           <span className="text-xs text-slate-400">Uploading…</span>
+        ) : removing ? (
+          <span className="text-xs text-slate-400">Removing…</span>
         ) : src ? (
           <img src={src} alt={label} className="h-full w-full object-contain" />
         ) : !available ? (
@@ -281,11 +312,16 @@ function DocPreview({
         )}
       </div>
       <p className="mt-1 text-center text-xs text-slate-500">{label}</p>
-      {needsUpload && !uploading && (
+      {!busy && needsUpload && (
         <label className="mt-1 block cursor-pointer text-center text-xs font-semibold text-teal-700 hover:text-teal-800">
           Upload
           <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} />
         </label>
+      )}
+      {!busy && !needsUpload && src && (
+        <button type="button" onClick={onRemove} className="mt-1 block w-full text-center text-xs font-semibold text-red-600 hover:text-red-700">
+          Remove
+        </button>
       )}
     </div>
   );
