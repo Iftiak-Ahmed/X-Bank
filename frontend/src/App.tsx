@@ -21,6 +21,7 @@ import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import Customers from "./pages/employee/Customers";
 import CustomerDetail from "./pages/employee/CustomerDetail";
 import CashIn from "./pages/employee/CashIn";
+import CashWithdrawal from "./pages/employee/CashWithdrawal";
 import FundTransfer from "./pages/employee/FundTransfer";
 
 import ComplianceDashboard from "./pages/compliance/ComplianceDashboard";
@@ -45,6 +46,7 @@ import Applications from "./pages/admin/Applications";
 import ApplicationDetail from "./pages/admin/ApplicationDetail";
 import AdminFrameworks from "./pages/admin/Frameworks";
 import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
+import BankAudit from "./pages/admin/BankAudit";
 import StaffProfile from "./pages/shared/StaffProfile";
 
 const CLIENT_NAV = [
@@ -60,6 +62,7 @@ const EMPLOYEE_NAV = [
   { label: "Dashboard", to: "/employee/dashboard" },
   { label: "Customers", to: "/employee/customers" },
   { label: "Cash In", to: "/employee/cash-in" },
+  { label: "Cash Withdrawal", to: "/employee/cash-withdrawal" },
   { label: "Fund Transfer", to: "/employee/fund-transfer" },
 ];
 
@@ -78,10 +81,11 @@ const ADMIN_NAV = [
   { label: "Dashboard", to: "/admin/dashboard" },
   { label: "Customer Applications", to: "/admin/applications" },
   { label: "Users", to: "/admin/users" },
-  { label: "Compliance Rules", to: "/admin/rules" },
   { label: "Transaction Rules", to: "/admin/transaction-rules" },
   { label: "Frameworks", to: "/admin/frameworks" },
-  { label: "Audit Logs", to: "/admin/audit-logs" },
+  { label: "Compliance Rules", to: "/admin/rules" },
+  { label: "System Log", to: "/admin/audit-logs" },
+  { label: "Bank Audit", to: "/admin/bank-audit" },
 ];
 
 function ChangePasswordRoute() {
@@ -129,6 +133,7 @@ export default function App() {
             <Route path="/employee/customers" element={<Customers />} />
             <Route path="/employee/customers/:id" element={<CustomerDetail />} />
             <Route path="/employee/cash-in" element={<CashIn />} />
+            <Route path="/employee/cash-withdrawal" element={<CashWithdrawal />} />
             <Route path="/employee/fund-transfer" element={<FundTransfer />} />
             <Route path="/employee/profile" element={<StaffProfile />} />
           </Route>
@@ -171,6 +176,7 @@ export default function App() {
             <Route path="/admin/transaction-rules" element={<TransactionRules />} />
             <Route path="/admin/frameworks" element={<AdminFrameworks />} />
             <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
+            <Route path="/admin/bank-audit" element={<BankAudit />} />
             <Route path="/admin/profile" element={<StaffProfile />} />
           </Route>
         </Routes>

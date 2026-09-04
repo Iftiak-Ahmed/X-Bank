@@ -7,9 +7,11 @@ import { generateAccountNumber, generateReference } from "../utils/ids";
 import { generateUniqueAccountNumber } from "../utils/unique";
 import { writeAuditLog } from "../utils/audit";
 import { runComplianceCheck } from "../compliance/monitoringService";
-import { checkTransactionRules, recordTransactionRuleAlert } from "../compliance/transactionRuleEngine";
+import { checkTransactionRulesInTransaction, recordTransactionRuleAlert } from "../compliance/transactionRuleEngine";
 import { asyncHandler } from "../utils/asyncHandler";
 import { calculateDpsMaturity, DPS_ALLOWED_TERM_YEARS, DPS_PROFIT_RATE_PERCENT } from "../utils/dps";
+import { localDateKey } from "../utils/dateKey";
+import { InsufficientBalanceError, TransactionRuleBlockedError } from "../utils/errors";
 
 export const clientRouter = Router();
 clientRouter.use(requireAuth, requireRole("client"));
@@ -36,13 +38,20 @@ clientRouter.get("/dashboard/summary", asyncHandler(async (req, res) => {
 
   let recentTransactions: any[] = [];
   if (accountIds.length) {
-    const txSnap = await db
-      .collection("transactions")
-      .where("senderAccountId", "in", accountIds.slice(0, 10))
-      .orderBy("createdAt", "desc")
-      .limit(8)
-      .get();
-    recentTransactions = txSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const ids = accountIds.slice(0, 10);
+    // A single "in" query can't cover both directions of money movement, so an
+    // incoming transfer (this account only as receiver) would otherwise silently
+    // never show up here even though the balance already reflects it — fetch both
+    // sides and merge, same as the full transaction history endpoint does.
+    const [sentSnap, receivedSnap] = await Promise.all([
+      db.collection("transactions").where("senderAccountId", "in", ids).orderBy("createdAt", "desc").limit(8).get(),
+      db.collection("transactions").where("receiverAccountId", "in", ids).orderBy("createdAt", "desc").limit(8).get(),
+    ]);
+    const byId = new Map<string, any>();
+    for (const d of [...sentSnap.docs, ...receivedSnap.docs]) byId.set(d.id, { id: d.id, ...d.data() });
+    recentTransactions = [...byId.values()]
+      .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))
+      .slice(0, 8);
   }
 
   res.json({
@@ -51,6 +60,78 @@ clientRouter.get("/dashboard/summary", asyncHandler(async (req, res) => {
     accounts: accountsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     recentTransactions,
   });
+}));
+
+clientRouter.get("/dashboard/balance-trend", asyncHandler(async (req, res) => {
+  const customerId = await requireOwnCustomer(req, res);
+  if (!customerId) return;
+
+  const accountsSnap = await db.collection("accounts").where("customerId", "==", customerId).get();
+  const accountIds = accountsSnap.docs.map((d) => d.id);
+  const currentBalance = accountsSnap.docs.reduce((sum, d) => sum + Number(d.data().balance ?? 0), 0);
+
+  const days = 14;
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const cutoff = new Date(dayStart);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+
+  // Plain equality/"in" filters only (no orderBy/range) — same shape already
+  // proven safe elsewhere in this app, avoids a composite index this
+  // environment can't provision. Bounded to one customer's own accounts, so
+  // sorting/filtering the small result set in memory is cheap.
+  let txDocs: FirebaseFirestore.DocumentData[] = [];
+  if (accountIds.length) {
+    const [sentSnap, receivedSnap] = await Promise.all([
+      db.collection("transactions").where("senderAccountId", "in", accountIds.slice(0, 10)).get(),
+      db.collection("transactions").where("receiverAccountId", "in", accountIds.slice(0, 10)).get(),
+    ]);
+    const byId = new Map<string, FirebaseFirestore.DocumentData>();
+    [...sentSnap.docs, ...receivedSnap.docs].forEach((d) => byId.set(d.id, d.data()));
+    txDocs = [...byId.values()];
+  }
+
+  const accountIdSet = new Set(accountIds);
+
+  const deltaByDay = new Map<string, number>();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(cutoff);
+    d.setDate(cutoff.getDate() + i);
+    deltaByDay.set(localDateKey(d), 0);
+  }
+
+  for (const tx of txDocs) {
+    const createdAt = tx.createdAt?.toDate?.();
+    if (!createdAt || createdAt < cutoff) continue;
+    const key = localDateKey(createdAt);
+    if (!deltaByDay.has(key)) continue;
+
+    const amount = Number(tx.amount ?? 0);
+    const senderIsMine = accountIdSet.has(tx.senderAccountId);
+    const receiverIsMine = accountIdSet.has(tx.receiverAccountId);
+    // Deposit/withdrawal are self-referential (sender === receiver === the
+    // funded account) and represent real cash in/out, not an internal
+    // transfer, so they're handled before the general netting rule below —
+    // otherwise "mine both sides" would net them to zero.
+    let delta = 0;
+    if (tx.type === "deposit") delta = amount;
+    else if (tx.type === "withdrawal") delta = -amount;
+    else delta = (receiverIsMine ? amount : 0) - (senderIsMine ? amount : 0);
+
+    deltaByDay.set(key, (deltaByDay.get(key) ?? 0) + delta);
+  }
+
+  // Walk backward from today's known balance to reconstruct each day's
+  // closing balance, since only the current balance is stored (no history).
+  const sortedDays = [...deltaByDay.keys()].sort();
+  const balanceByDay = new Map<string, number>();
+  let runningBalance = currentBalance;
+  for (let i = sortedDays.length - 1; i >= 0; i--) {
+    balanceByDay.set(sortedDays[i], runningBalance);
+    runningBalance -= deltaByDay.get(sortedDays[i]) ?? 0;
+  }
+
+  res.json(sortedDays.map((date) => ({ date, balance: Math.round(balanceByDay.get(date)! * 100) / 100 })));
 }));
 
 clientRouter.get("/accounts", asyncHandler(async (req, res) => {
@@ -111,6 +192,9 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
   if (!senderSnap.exists || senderSnap.data()!.customerId !== customerId) {
     return res.status(403).json({ error: "Not your account." });
   }
+  if (senderSnap.data()!.accountNumber === receiverAccountNumber) {
+    return res.status(400).json({ error: "Sender and receiver accounts must be different." });
+  }
   if (Number(senderSnap.data()!.balance) < amount) {
     return res.status(400).json({ error: "Insufficient balance." });
   }
@@ -121,41 +205,52 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
 
   const customerSnap = await db.collection("customers").doc(customerId).get();
   const customerType = customerSnap.exists ? customerSnap.data()!.customerType ?? "individual" : "individual";
-  const violations = await checkTransactionRules({ accountId: senderAccountId, transactionType: "transfer", amount, customerType });
-  const blocking = violations.find((v) => v.violationAction === "block");
-  if (blocking) {
-    return res.status(403).json({ error: `Blocked by transaction rule "${blocking.ruleName}": ${blocking.reason}` });
-  }
 
   const txRef = db.collection("transactions").doc();
-  await db.runTransaction(async (t) => {
-    const freshSender = await t.get(senderRef);
-    const freshReceiver = await t.get(receiverDoc.ref);
-    if (Number(freshSender.data()!.balance) < amount) throw new Error("Insufficient balance.");
+  let violations: Awaited<ReturnType<typeof checkTransactionRulesInTransaction>> = [];
+  try {
+    await db.runTransaction(async (t) => {
+      const freshSender = await t.get(senderRef);
+      const freshReceiver = await t.get(receiverDoc.ref);
+      if (Number(freshSender.data()!.balance) < amount) throw new InsufficientBalanceError();
 
-    t.update(senderRef, { balance: FieldValue.increment(-amount) });
-    t.update(receiverDoc.ref, { balance: FieldValue.increment(amount) });
-    t.set(txRef, {
-      reference: generateReference("TXN"),
-      senderAccountId,
-      senderCustomerId: customerId,
-      receiverAccountId: receiverDoc.id,
-      receiverCustomerId: freshReceiver.data()!.customerId,
-      amount,
-      currency,
-      type: "transfer",
-      purpose,
-      description: description ?? "",
-      channel: "web",
-      location,
-      status: "pending",
-      complianceStatus: "pending_check",
-      riskScore: null,
-      riskLevel: null,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      violations = await checkTransactionRulesInTransaction(t, {
+        accountId: senderAccountId,
+        transactionType: "transfer",
+        amount,
+        customerType,
+      });
+      const blocking = violations.find((v) => v.violationAction === "block");
+      if (blocking) throw new TransactionRuleBlockedError(blocking.ruleName, blocking.reason);
+
+      t.update(senderRef, { balance: FieldValue.increment(-amount) });
+      t.update(receiverDoc.ref, { balance: FieldValue.increment(amount) });
+      t.set(txRef, {
+        reference: generateReference("TXN"),
+        senderAccountId,
+        senderCustomerId: customerId,
+        receiverAccountId: receiverDoc.id,
+        receiverCustomerId: freshReceiver.data()!.customerId,
+        amount,
+        currency,
+        type: "transfer",
+        purpose,
+        description: description ?? "",
+        channel: "web",
+        location,
+        status: "pending",
+        complianceStatus: "pending_check",
+        riskScore: null,
+        riskLevel: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     });
-  });
+  } catch (err) {
+    if (err instanceof InsufficientBalanceError) return res.status(400).json({ error: err.message });
+    if (err instanceof TransactionRuleBlockedError) return res.status(403).json({ error: err.message });
+    throw err;
+  }
 
   await writeAuditLog({
     userId: req.user!.uid,
@@ -191,33 +286,39 @@ clientRouter.post("/transactions/deposit", asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "Not your account." });
   }
 
-  const depositViolations = await checkTransactionRules({ accountId, transactionType: "deposit", amount });
-  const depositBlocking = depositViolations.find((v) => v.violationAction === "block");
-  if (depositBlocking) {
-    return res.status(403).json({ error: `Blocked by transaction rule "${depositBlocking.ruleName}": ${depositBlocking.reason}` });
-  }
-
   const txRef = db.collection("transactions").doc();
-  await accountRef.update({ balance: FieldValue.increment(amount) });
-  await txRef.set({
-    reference: generateReference("DEP"),
-    senderAccountId: accountId,
-    senderCustomerId: customerId,
-    receiverAccountId: accountId,
-    receiverCustomerId: customerId,
-    amount,
-    currency: "BDT",
-    type: "deposit",
-    purpose: "Simulated deposit",
-    channel: "web",
-    location: "BD",
-    status: "approved",
-    complianceStatus: "cleared",
-    riskScore: 0,
-    riskLevel: "low",
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  let depositViolations: Awaited<ReturnType<typeof checkTransactionRulesInTransaction>> = [];
+  try {
+    await db.runTransaction(async (t) => {
+      depositViolations = await checkTransactionRulesInTransaction(t, { accountId, transactionType: "deposit", amount });
+      const depositBlocking = depositViolations.find((v) => v.violationAction === "block");
+      if (depositBlocking) throw new TransactionRuleBlockedError(depositBlocking.ruleName, depositBlocking.reason);
+
+      t.update(accountRef, { balance: FieldValue.increment(amount) });
+      t.set(txRef, {
+        reference: generateReference("DEP"),
+        senderAccountId: accountId,
+        senderCustomerId: customerId,
+        receiverAccountId: accountId,
+        receiverCustomerId: customerId,
+        amount,
+        currency: "BDT",
+        type: "deposit",
+        purpose: "Simulated deposit",
+        channel: "web",
+        location: "BD",
+        status: "approved",
+        complianceStatus: "cleared",
+        riskScore: 0,
+        riskLevel: "low",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (err) {
+    if (err instanceof TransactionRuleBlockedError) return res.status(403).json({ error: err.message });
+    throw err;
+  }
 
   await writeAuditLog({
     userId: req.user!.uid,
@@ -251,33 +352,43 @@ clientRouter.post("/transactions/withdraw", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Insufficient balance." });
   }
 
-  const withdrawViolations = await checkTransactionRules({ accountId, transactionType: "withdrawal", amount });
-  const withdrawBlocking = withdrawViolations.find((v) => v.violationAction === "block");
-  if (withdrawBlocking) {
-    return res.status(403).json({ error: `Blocked by transaction rule "${withdrawBlocking.ruleName}": ${withdrawBlocking.reason}` });
-  }
-
   const txRef = db.collection("transactions").doc();
-  await accountRef.update({ balance: FieldValue.increment(-amount) });
-  await txRef.set({
-    reference: generateReference("WDR"),
-    senderAccountId: accountId,
-    senderCustomerId: customerId,
-    receiverAccountId: accountId,
-    receiverCustomerId: customerId,
-    amount,
-    currency: "BDT",
-    type: "withdrawal",
-    purpose: "Simulated withdrawal",
-    channel: "web",
-    location: "BD",
-    status: "approved",
-    complianceStatus: "cleared",
-    riskScore: 0,
-    riskLevel: "low",
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  let withdrawViolations: Awaited<ReturnType<typeof checkTransactionRulesInTransaction>> = [];
+  try {
+    await db.runTransaction(async (t) => {
+      const freshAccount = await t.get(accountRef);
+      if (Number(freshAccount.data()!.balance) < amount) throw new InsufficientBalanceError();
+
+      withdrawViolations = await checkTransactionRulesInTransaction(t, { accountId, transactionType: "withdrawal", amount });
+      const withdrawBlocking = withdrawViolations.find((v) => v.violationAction === "block");
+      if (withdrawBlocking) throw new TransactionRuleBlockedError(withdrawBlocking.ruleName, withdrawBlocking.reason);
+
+      t.update(accountRef, { balance: FieldValue.increment(-amount) });
+      t.set(txRef, {
+        reference: generateReference("WDR"),
+        senderAccountId: accountId,
+        senderCustomerId: customerId,
+        receiverAccountId: accountId,
+        receiverCustomerId: customerId,
+        amount,
+        currency: "BDT",
+        type: "withdrawal",
+        purpose: "Simulated withdrawal",
+        channel: "web",
+        location: "BD",
+        status: "approved",
+        complianceStatus: "cleared",
+        riskScore: 0,
+        riskLevel: "low",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (err) {
+    if (err instanceof InsufficientBalanceError) return res.status(400).json({ error: err.message });
+    if (err instanceof TransactionRuleBlockedError) return res.status(403).json({ error: err.message });
+    throw err;
+  }
 
   await writeAuditLog({
     userId: req.user!.uid,

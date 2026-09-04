@@ -71,6 +71,10 @@ export default function FundTransfer() {
     setSubmitError(null);
     const amt = Number(amount);
     if (!sender || !receiver || !amt || amt <= 0) return;
+    if (amt > sender.account.balance) {
+      setSubmitError("Amount exceeds the sender's current balance.");
+      return;
+    }
     setSubmitting(true);
     try {
       const tx = await api.post<{ reference: string; amount: number; currency: string }>("/api/employee/fund-transfer", {
@@ -162,6 +166,7 @@ export default function FundTransfer() {
               <input
                 type="number"
                 min="1"
+                max={sender.account.balance}
                 step="0.01"
                 required
                 value={amount}

@@ -254,10 +254,16 @@ authRouter.patch("/profile", requireAuth, asyncHandler(async (req, res) => {
   res.json({ fullName: fullName ?? undefined, email: email ?? req.user!.email });
 }));
 
-const changePasswordSchema = z.object({ newPassword: z.string().min(8) });
+const changePasswordSchema = z.object({
+  newPassword: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .regex(/[A-Z]/, "Password must include at least one uppercase letter.")
+    .regex(/[^A-Za-z0-9]/, "Password must include at least one special character."),
+});
 authRouter.post("/change-password", requireAuth, asyncHandler(async (req, res) => {
   const parsed = changePasswordSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Password must be at least 8 characters." });
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid password." });
 
   await auth.updateUser(req.user!.uid, { password: parsed.data.newPassword });
   await db.collection("users").doc(req.user!.uid).update({ mustChangePassword: false });

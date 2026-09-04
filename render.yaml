@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: xbank-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: FIREBASE_PROJECT_ID
+        value: meridian-sentinel-v9bj0c
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/firebase-admin-key.json
+      - key: CLIENT_ORIGIN
+        value: https://xbank.web.app
+      - key: LARGE_TRANSACTION_THRESHOLD
+        value: "200000"
+      - key: HIGH_RISK_LOCATIONS
+        value: "RU,KP,IR"
+      - key: MONITORING_INTERVAL_MS
+        value: "30000"
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

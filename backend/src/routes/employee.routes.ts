@@ -8,20 +8,47 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { generateReference } from "../utils/ids";
 import { readKycDocument } from "../utils/fileStorage";
 import { runComplianceCheck } from "../compliance/monitoringService";
+import { localDateKey } from "../utils/dateKey";
 
 export const employeeRouter = Router();
 employeeRouter.use(requireAuth, requireRole("employee"));
 
-employeeRouter.get("/dashboard", asyncHandler(async (req, res) => {
-  const [customersSnap, txSnap] = await Promise.all([
-    db.collection("customers").orderBy("createdAt", "desc").limit(25).get(),
-    db.collection("transactions").orderBy("createdAt", "desc").limit(10).get(),
-  ]);
-  res.json({
-    customerCount: customersSnap.size,
-    recentCustomers: customersSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    recentTransactions: txSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+employeeRouter.get("/dashboard", asyncHandler(async (_req, res) => {
+  const customersSnap = await db.collection("customers").count().get();
+  res.json({ customerCount: customersSnap.data().count });
+}));
+
+employeeRouter.get("/dashboard/activity-trend", asyncHandler(async (_req, res) => {
+  const days = 7;
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+
+  // Single range filter on one field — no composite index needed. Bounded to a
+  // week of activity, so filtering by channel/type in memory is cheap.
+  const snap = await db.collection("transactions").where("createdAt", ">=", cutoff).get();
+
+  const byDay = new Map<string, { cashIn: number; cashOut: number; transfer: number }>();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(cutoff);
+    d.setDate(cutoff.getDate() + i);
+    byDay.set(localDateKey(d), { cashIn: 0, cashOut: 0, transfer: 0 });
+  }
+
+  snap.docs.forEach((doc) => {
+    const data = doc.data();
+    if (data.channel !== "branch") return;
+    const createdAt = data.createdAt?.toDate?.();
+    if (!createdAt) return;
+    const bucket = byDay.get(localDateKey(createdAt));
+    if (!bucket) return;
+    const amount = Number(data.amount ?? 0);
+    if (data.type === "cash_in") bucket.cashIn += amount;
+    else if (data.type === "cash_out") bucket.cashOut += amount;
+    else if (data.type === "fund_transfer") bucket.transfer += amount;
   });
+
+  res.json([...byDay.entries()].map(([date, v]) => ({ date, cashIn: v.cashIn, cashOut: v.cashOut, transfer: v.transfer })));
 }));
 
 employeeRouter.get("/customers", asyncHandler(async (req, res) => {
@@ -58,13 +85,19 @@ employeeRouter.get("/customers/:id/transactions", asyncHandler(async (req, res) 
   const accountsSnap = await db.collection("accounts").where("customerId", "==", req.params.id).get();
   const accountIds = accountsSnap.docs.map((d) => d.id);
   if (!accountIds.length) return res.json([]);
-  const snap = await db
-    .collection("transactions")
-    .where("senderAccountId", "in", accountIds.slice(0, 10))
-    .orderBy("createdAt", "desc")
-    .limit(30)
-    .get();
-  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const ids = accountIds.slice(0, 10);
+  // Money received (e.g. an incoming transfer) only sets receiverAccountId, so a
+  // sender-only query would silently hide it from this customer's transaction list.
+  const [sentSnap, receivedSnap] = await Promise.all([
+    db.collection("transactions").where("senderAccountId", "in", ids).orderBy("createdAt", "desc").limit(30).get(),
+    db.collection("transactions").where("receiverAccountId", "in", ids).orderBy("createdAt", "desc").limit(30).get(),
+  ]);
+  const byId = new Map<string, any>();
+  for (const d of [...sentSnap.docs, ...receivedSnap.docs]) byId.set(d.id, { id: d.id, ...d.data() });
+  const transactions = [...byId.values()]
+    .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))
+    .slice(0, 30);
+  res.json(transactions);
 }));
 
 employeeRouter.get("/customers/:id/kyc", asyncHandler(async (req, res) => {
@@ -104,7 +137,7 @@ employeeRouter.get("/accounts/lookup", asyncHandler(async (req, res) => {
     action: "customer_data.accessed",
     resource: "accounts",
     resourceId: accountDoc.id,
-    description: `Employee looked up account ${accountNumber} for cash-in.`,
+    description: `Employee looked up account ${accountNumber}.`,
     ip: req.ip,
   });
 
@@ -188,6 +221,67 @@ employeeRouter.post("/cash-in", asyncHandler(async (req, res) => {
     resource: "transactions",
     resourceId: txRef.id,
     description: `Employee cashed in ${amount} ${account.currency ?? "BDT"} to account ${accountNumber}.`,
+    ip: req.ip,
+  });
+
+  const result = await runComplianceCheck(txRef.id);
+  const finalSnap = await txRef.get();
+
+  res.status(201).json({ id: txRef.id, ...finalSnap.data(), complianceResult: result });
+}));
+
+const cashOutSchema = z.object({
+  accountNumber: z.string().min(4),
+  amount: z.number().positive(),
+});
+
+employeeRouter.post("/cash-out", asyncHandler(async (req, res) => {
+  const parsed = cashOutSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+  const { accountNumber, amount } = parsed.data;
+
+  const accountSnap = await db.collection("accounts").where("accountNumber", "==", accountNumber).limit(1).get();
+  if (accountSnap.empty) return res.status(404).json({ error: "No account found with that number." });
+  const accountDoc = accountSnap.docs[0];
+  const account = accountDoc.data();
+  if (account.status !== "active") return res.status(400).json({ error: `This account is ${account.status}.` });
+  if (Number(account.balance) < amount) return res.status(400).json({ error: "Insufficient balance." });
+
+  const txRef = db.collection("transactions").doc();
+  await db.runTransaction(async (t) => {
+    const freshAccount = await t.get(accountDoc.ref);
+    if (Number(freshAccount.data()!.balance) < amount) throw new Error("Insufficient balance.");
+
+    t.update(accountDoc.ref, { balance: FieldValue.increment(-amount) });
+    t.set(txRef, {
+      reference: generateReference("CSH"),
+      senderAccountId: accountDoc.id,
+      senderCustomerId: account.customerId,
+      receiverAccountId: accountDoc.id,
+      receiverCustomerId: account.customerId,
+      amount,
+      currency: account.currency ?? "BDT",
+      type: "cash_out",
+      purpose: "Branch cash withdrawal",
+      channel: "branch",
+      location: "BD",
+      performedBy: req.user!.uid,
+      status: "pending",
+      complianceStatus: "pending_check",
+      riskScore: null,
+      riskLevel: null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: "employee",
+    action: "cash_out.performed",
+    resource: "transactions",
+    resourceId: txRef.id,
+    description: `Employee cashed out ${amount} ${account.currency ?? "BDT"} from account ${accountNumber}.`,
     ip: req.ip,
   });
 

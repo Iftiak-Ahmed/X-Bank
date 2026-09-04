@@ -4,7 +4,7 @@ import { generateUniqueUserId } from "../utils/unique";
 import { saveKycDocument, hashBuffer } from "../utils/fileStorage";
 import { Role } from "../types/roles";
 
-const DEMO_PASSWORD = "123456";
+const DEMO_PASSWORD = "A#123456";
 
 const DEMO_USERS: { email: string; fullName: string; role: Role }[] = [
   { email: "client.demo@xbank.app", fullName: "Ayesha Rahman", role: "client" },

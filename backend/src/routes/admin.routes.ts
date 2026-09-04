@@ -13,6 +13,7 @@ import { provisionClientFromApplication } from "../services/accountProvisioning"
 import { asyncHandler } from "../utils/asyncHandler";
 import { isLocked } from "../config/lockout";
 import { emitLoginResolved } from "../realtime/socket";
+import { localDateKey } from "../utils/dateKey";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole("admin"));
@@ -110,14 +111,14 @@ adminRouter.get("/dashboard/transaction-activity", asyncHandler(async (_req, res
   for (let i = 0; i < days; i++) {
     const d = new Date(cutoff);
     d.setDate(cutoff.getDate() + i);
-    byDay.set(d.toISOString().slice(0, 10), { amount: 0, count: 0 });
+    byDay.set(localDateKey(d), { amount: 0, count: 0 });
   }
 
   snap.docs.forEach((doc) => {
     const data = doc.data();
     const createdAt = data.createdAt?.toDate?.();
     if (!createdAt) return;
-    const key = createdAt.toISOString().slice(0, 10);
+    const key = localDateKey(createdAt);
     const bucket = byDay.get(key);
     if (!bucket) return;
     bucket.amount += Number(data.amount ?? 0);
@@ -347,8 +348,6 @@ const createStaffSchema = z
     fullName: z.string().min(2),
     email: z.string().email(),
     role: z.enum(["employee", "compliance_officer", "admin"]),
-    department: z.string().optional(),
-    branch: z.string().optional(),
     permissions: z.array(z.string()).optional(),
     // Banking Executive accounts have their User ID and password set by the
     // admin directly, instead of the auto-generated ones used for other roles.
@@ -361,7 +360,7 @@ const createStaffSchema = z
 adminRouter.post("/users", asyncHandler(async (req, res) => {
   const parsed = createStaffSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
-  const { fullName, email, role, department, branch, permissions } = parsed.data;
+  const { fullName, email, role, permissions } = parsed.data;
 
   try {
     let userId: string;
@@ -380,8 +379,6 @@ adminRouter.post("/users", asyncHandler(async (req, res) => {
       fullName,
       userId,
       role,
-      department: department ?? null,
-      branch: branch ?? null,
       permissions: permissions ?? [],
       status: "active",
       mustChangePassword: true,
@@ -399,7 +396,7 @@ adminRouter.post("/users", asyncHandler(async (req, res) => {
       resource: "users",
       resourceId: userRecord.uid,
       description: `Admin created ${role} account for ${email} (User ID ${userId}).`,
-      newValue: { role, department: department ?? null, branch: branch ?? null },
+      newValue: { role },
       ip: req.ip,
     });
 
@@ -751,6 +748,39 @@ adminRouter.get("/controls", asyncHandler(async (req, res) => {
 adminRouter.get("/audit-logs", asyncHandler(async (req, res) => {
   const snap = await db.collection("auditLogs").orderBy("createdAt", "desc").limit(Number(req.query.limit ?? 200)).get();
   res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+}));
+
+// ---------------------------------------------------------------------------
+// Bank Audit — the full transaction ledger for admin review, with all
+// date-range/type/channel/risk/status filtering done in memory (single
+// orderBy+limit fetch, no compound query, so no composite index is needed).
+// ---------------------------------------------------------------------------
+
+adminRouter.get("/bank-audit/transactions", asyncHandler(async (req, res) => {
+  const snap = await db.collection("transactions").orderBy("createdAt", "desc").limit(Number(req.query.limit ?? 2000)).get();
+  const transactions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const customerIds = [...new Set(transactions.map((t: any) => t.senderCustomerId).filter(Boolean))];
+  const customerDocs = customerIds.length ? await db.getAll(...customerIds.map((id: string) => db.collection("customers").doc(id))) : [];
+  const customerNameById = new Map(customerDocs.map((d) => [d.id, d.exists ? d.data()!.fullName : null]));
+
+  res.json(
+    transactions.map((t: any) => ({
+      id: t.id,
+      reference: t.reference,
+      customerName: customerNameById.get(t.senderCustomerId) ?? "Unknown",
+      type: t.type,
+      channel: t.channel,
+      amount: t.amount,
+      currency: t.currency,
+      status: t.status,
+      complianceStatus: t.complianceStatus,
+      riskScore: t.riskScore,
+      riskLevel: t.riskLevel,
+      location: t.location,
+      createdAt: t.createdAt,
+    }))
+  );
 }));
 
 adminRouter.get("/emails", asyncHandler(async (req, res) => {

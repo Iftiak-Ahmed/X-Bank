@@ -22,7 +22,7 @@ export default function Users() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ fullName: "", email: "", role: "employee", department: "", branch: "", userId: "", password: "" });
+  const [form, setForm] = useState({ fullName: "", email: "", role: "employee", userId: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ userId: string; tempPassword: string; emailDelivered: boolean } | null>(null);
   const isBankingExecutive = form.role === "employee";
@@ -44,7 +44,7 @@ export default function Users() {
       const payload = isBankingExecutive ? { ...rest, userId, password } : rest;
       const result = await api.post<{ userId: string; tempPassword: string; emailDelivered: boolean }>("/api/admin/users", payload);
       setCreated(result);
-      setForm({ fullName: "", email: "", role: "employee", department: "", branch: "", userId: "", password: "" });
+      setForm({ fullName: "", email: "", role: "employee", userId: "", password: "" });
       load();
     } catch (err: any) {
       setError(err.message ?? "Failed to create user.");
@@ -102,8 +102,6 @@ export default function Users() {
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
             {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
-          <input placeholder="Department (optional)" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input placeholder="Branch (optional)" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           {isBankingExecutive && (
             <>
               <input required placeholder="User ID" value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
@@ -112,9 +110,6 @@ export default function Users() {
           )}
           <PrimaryButton type="submit">Create</PrimaryButton>
         </form>
-        {isBankingExecutive && (
-          <p className="mt-2 text-xs text-slate-400">Banking Executive accounts use a User ID and password you set here, instead of auto-generated ones.</p>
-        )}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         {created && (
           <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800">

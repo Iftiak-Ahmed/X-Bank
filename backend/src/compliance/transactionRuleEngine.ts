@@ -2,6 +2,7 @@ import { db, FieldValue } from "../config/firebase";
 import { generateReference } from "../utils/ids";
 import { writeAuditLog } from "../utils/audit";
 import { emitAlertCreated } from "../realtime/socket";
+import { localDateKey } from "../utils/dateKey";
 
 export type TransactionRuleAction = "block" | "flag" | "alert";
 export type TransactionRuleType = "all" | "transfer" | "deposit" | "withdrawal";
@@ -34,119 +35,147 @@ interface TransactionRuleDoc {
   violationAction: TransactionRuleAction;
 }
 
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+interface UsageState {
+  dayKey: string;
+  monthKey: string;
+  dayTotal: Record<string, number>;
+  dayCount: Record<string, number>;
+  monthTotal: Record<string, number>;
+  monthCount: Record<string, number>;
 }
 
-function startOfMonth(d: Date): Date {
-  const x = new Date(d);
-  x.setDate(1);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function monthKeyFor(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function sumFor(docs: FirebaseFirestore.DocumentData[], type: TransactionRuleType) {
-  const filtered = type === "all" ? docs : docs.filter((d) => d.type === type);
+function freshUsage(dayKey: string, monthKey: string): UsageState {
+  return { dayKey, monthKey, dayTotal: {}, dayCount: {}, monthTotal: {}, monthCount: {} };
+}
+
+// Rolls the stored running totals over whenever the calendar day/month has changed
+// since they were last written, so a rule check on a new day starts from zero
+// instead of carrying yesterday's spend forward.
+function loadUsage(data: FirebaseFirestore.DocumentData | undefined, dayKey: string, monthKey: string): UsageState {
+  if (!data) return freshUsage(dayKey, monthKey);
   return {
-    total: filtered.reduce((sum, d) => sum + Number(d.amount ?? 0), 0),
-    count: filtered.length,
+    dayKey,
+    monthKey,
+    dayTotal: data.dayKey === dayKey ? { ...(data.dayTotal ?? {}) } : {},
+    dayCount: data.dayKey === dayKey ? { ...(data.dayCount ?? {}) } : {},
+    monthTotal: data.monthKey === monthKey ? { ...(data.monthTotal ?? {}) } : {},
+    monthCount: data.monthKey === monthKey ? { ...(data.monthCount ?? {}) } : {},
   };
 }
 
-/**
- * Evaluates the sending account's transaction against every active admin-configured
- * transaction rule that applies to this transaction/customer type. Called live, right
- * before a transaction is committed, so a "block" rule can stop it before money moves.
- */
-export async function checkTransactionRules(input: CheckInput): Promise<TransactionRuleViolation[]> {
+async function loadApplicableRules(input: CheckInput): Promise<TransactionRuleDoc[]> {
   const rulesSnap = await db.collection("transactionRules").where("status", "==", "active").get();
   const customerType = input.customerType ?? "individual";
-  const applicable = rulesSnap.docs
+  return rulesSnap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<TransactionRuleDoc, "id">) }))
     .filter(
       (r) =>
         (r.transactionType === "all" || r.transactionType === input.transactionType) &&
         (r.customerType === "all" || r.customerType === customerType)
     );
-  if (!applicable.length) return [];
+}
 
-  // A history fetch (up to 500 reads) is only useful to rules that actually check a
-  // daily/monthly dimension — a rule with just a perTransactionLimit needs none of
-  // this, so skip the read entirely rather than paying for it on every transaction.
-  const needsHistory = applicable.some(
-    (r) => r.dailyTransactionLimit || r.monthlyTransactionLimit || r.dailyCountLimit || r.monthlyCountLimit
-  );
-
-  let dayDocs: FirebaseFirestore.DocumentData[] = [];
-  let monthDocs: FirebaseFirestore.DocumentData[] = [];
-  if (needsHistory) {
-    // A plain equality + range filter on two different fields would need a composite
-    // index this environment can't provision on demand, so we reuse the equality +
-    // orderBy(createdAt) shape already indexed elsewhere in this app, and filter the
-    // day/month windows out of that single recent-history fetch in memory instead.
-    const now = new Date();
-    const dayStart = startOfDay(now);
-    const monthStart = startOfMonth(now);
-    const recentSnap = await db
-      .collection("transactions")
-      .where("senderAccountId", "==", input.accountId)
-      .orderBy("createdAt", "desc")
-      .limit(500)
-      .get();
-    const recentDocs = recentSnap.docs.map((d) => d.data());
-    const createdAtMillis = (d: FirebaseFirestore.DocumentData): number => {
-      const ts = d.createdAt;
-      return typeof ts?.toMillis === "function" ? ts.toMillis() : 0;
-    };
-    dayDocs = recentDocs.filter((d) => createdAtMillis(d) >= dayStart.getTime());
-    monthDocs = recentDocs.filter((d) => createdAtMillis(d) >= monthStart.getTime());
-  }
-
+function evaluate(applicable: TransactionRuleDoc[], usage: UsageState, amount: number): TransactionRuleViolation[] {
   const violations: TransactionRuleViolation[] = [];
   for (const rule of applicable) {
-    const type: TransactionRuleType = rule.transactionType;
-    const day = sumFor(dayDocs, type);
-    const month = sumFor(monthDocs, type);
+    const bucket = rule.transactionType;
+    const dayTotal = usage.dayTotal[bucket] ?? 0;
+    const dayCount = usage.dayCount[bucket] ?? 0;
+    const monthTotal = usage.monthTotal[bucket] ?? 0;
+    const monthCount = usage.monthCount[bucket] ?? 0;
 
-    if (rule.perTransactionLimit && input.amount > rule.perTransactionLimit) {
+    if (rule.perTransactionLimit && amount > rule.perTransactionLimit) {
       violations.push({
         ruleId: rule.id,
         ruleName: rule.ruleName,
         violationAction: rule.violationAction,
-        reason: `Amount ${input.amount.toLocaleString()} exceeds the per-transaction limit of ${Number(rule.perTransactionLimit).toLocaleString()}.`,
+        reason: `Amount ${amount.toLocaleString()} exceeds the per-transaction limit of ${Number(rule.perTransactionLimit).toLocaleString()}.`,
       });
-    } else if (rule.dailyTransactionLimit && day.total + input.amount > rule.dailyTransactionLimit) {
+    } else if (rule.dailyTransactionLimit && dayTotal + amount > rule.dailyTransactionLimit) {
       violations.push({
         ruleId: rule.id,
         ruleName: rule.ruleName,
         violationAction: rule.violationAction,
-        reason: `Today's total of ${(day.total + input.amount).toLocaleString()} would exceed the daily limit of ${Number(rule.dailyTransactionLimit).toLocaleString()}.`,
+        reason: `Today's total of ${(dayTotal + amount).toLocaleString()} would exceed the daily limit of ${Number(rule.dailyTransactionLimit).toLocaleString()}.`,
       });
-    } else if (rule.monthlyTransactionLimit && month.total + input.amount > rule.monthlyTransactionLimit) {
+    } else if (rule.monthlyTransactionLimit && monthTotal + amount > rule.monthlyTransactionLimit) {
       violations.push({
         ruleId: rule.id,
         ruleName: rule.ruleName,
         violationAction: rule.violationAction,
-        reason: `This month's total of ${(month.total + input.amount).toLocaleString()} would exceed the monthly limit of ${Number(rule.monthlyTransactionLimit).toLocaleString()}.`,
+        reason: `This month's total of ${(monthTotal + amount).toLocaleString()} would exceed the monthly limit of ${Number(rule.monthlyTransactionLimit).toLocaleString()}.`,
       });
-    } else if (rule.dailyCountLimit && day.count + 1 > rule.dailyCountLimit) {
+    } else if (rule.dailyCountLimit && dayCount + 1 > rule.dailyCountLimit) {
       violations.push({
         ruleId: rule.id,
         ruleName: rule.ruleName,
         violationAction: rule.violationAction,
-        reason: `This would be transaction #${day.count + 1} today, exceeding the daily count limit of ${rule.dailyCountLimit}.`,
+        reason: `This would be transaction #${dayCount + 1} today, exceeding the daily count limit of ${rule.dailyCountLimit}.`,
       });
-    } else if (rule.monthlyCountLimit && month.count + 1 > rule.monthlyCountLimit) {
+    } else if (rule.monthlyCountLimit && monthCount + 1 > rule.monthlyCountLimit) {
       violations.push({
         ruleId: rule.id,
         ruleName: rule.ruleName,
         violationAction: rule.violationAction,
-        reason: `This would be transaction #${month.count + 1} this month, exceeding the monthly count limit of ${rule.monthlyCountLimit}.`,
+        reason: `This would be transaction #${monthCount + 1} this month, exceeding the monthly count limit of ${rule.monthlyCountLimit}.`,
       });
     }
   }
+  return violations;
+}
+
+/**
+ * Evaluates the sending account's transaction against every active admin-configured
+ * transaction rule that applies to this transaction/customer type, and — if nothing
+ * blocks it — reserves the amount against a running daily/monthly usage counter.
+ *
+ * Must be called from inside the same `db.runTransaction` that commits the balance
+ * change, with all `t.get()` calls (including this function's) issued before any
+ * writes. Firestore only guarantees consistency for documents a transaction both
+ * reads and writes, so reading+writing the same per-account usage counter here is
+ * what actually closes the race: two concurrent transfers against one account will
+ * both read the same starting counter, but only one can win the commit — the other
+ * is retried by Firestore against the updated counter and re-evaluated for real,
+ * rather than both being allowed through against a stale limit snapshot.
+ */
+export async function checkTransactionRulesInTransaction(
+  t: FirebaseFirestore.Transaction,
+  input: CheckInput
+): Promise<TransactionRuleViolation[]> {
+  const applicable = await loadApplicableRules(input);
+  if (!applicable.length) return [];
+
+  const now = new Date();
+  const dayKey = localDateKey(now);
+  const monthKey = monthKeyFor(now);
+
+  const needsHistory = applicable.some(
+    (r) => r.dailyTransactionLimit || r.monthlyTransactionLimit || r.dailyCountLimit || r.monthlyCountLimit
+  );
+  if (!needsHistory) {
+    return evaluate(applicable, freshUsage(dayKey, monthKey), input.amount);
+  }
+
+  const usageRef = db.collection("transactionRuleUsage").doc(input.accountId);
+  const usageSnap = await t.get(usageRef);
+  const usage = loadUsage(usageSnap.exists ? usageSnap.data() : undefined, dayKey, monthKey);
+  const violations = evaluate(applicable, usage, input.amount);
+
+  const blocked = violations.some((v) => v.violationAction === "block");
+  if (!blocked) {
+    for (const bucket of ["all", input.transactionType]) {
+      usage.dayTotal[bucket] = (usage.dayTotal[bucket] ?? 0) + input.amount;
+      usage.dayCount[bucket] = (usage.dayCount[bucket] ?? 0) + 1;
+      usage.monthTotal[bucket] = (usage.monthTotal[bucket] ?? 0) + input.amount;
+      usage.monthCount[bucket] = (usage.monthCount[bucket] ?? 0) + 1;
+    }
+    t.set(usageRef, usage);
+  }
+
   return violations;
 }
 

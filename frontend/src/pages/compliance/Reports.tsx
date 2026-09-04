@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../../lib/api";
-import { downloadCsv } from "../../lib/csv";
+import { downloadPdf } from "../../lib/pdf";
 import { Card, PageHeader, PrimaryButton } from "../../components/Shared";
 
 interface ReportDef {
@@ -8,11 +8,18 @@ interface ReportDef {
   title: string;
   description: string;
   endpoint: string;
+  filter?: (row: any) => boolean;
 }
 
 const REPORTS: ReportDef[] = [
   { key: "transactions", title: "Transaction Monitoring Report", description: "All monitored transactions with risk score and compliance status.", endpoint: "/api/compliance/transactions?limit=500" },
-  { key: "suspicious", title: "Suspicious Activity Report", description: "Transactions with High or Critical risk level.", endpoint: "/api/compliance/transactions?riskLevel=critical&limit=500" },
+  {
+    key: "suspicious",
+    title: "Suspicious Activity Report",
+    description: "Transactions with High or Critical risk level.",
+    endpoint: "/api/compliance/transactions?limit=500",
+    filter: (row) => row.riskLevel === "high" || row.riskLevel === "critical",
+  },
   { key: "alerts", title: "Alert Report", description: "All compliance alerts and their current status.", endpoint: "/api/compliance/alerts?limit=500" },
   { key: "kyc", title: "KYC Compliance Report", description: "KYC status across all customers.", endpoint: "/api/compliance/kyc" },
   { key: "matrix", title: "Compliance Violation Report", description: "Every FAIL result in the compliance matrix.", endpoint: "/api/compliance/matrix?result=fail&limit=500" },
@@ -26,8 +33,9 @@ export default function Reports() {
     setBusyKey(report.key);
     try {
       const data = await api.get<any[]>(report.endpoint);
-      const rows = data.map((row) => flatten(row));
-      downloadCsv(`${report.key}-report.csv`, rows);
+      const filtered = report.filter ? data.filter(report.filter) : data;
+      const rows = filtered.map((row) => flatten(row));
+      downloadPdf(`${report.key}-report.pdf`, report.title, rows);
     } finally {
       setBusyKey(null);
     }
@@ -35,7 +43,7 @@ export default function Reports() {
 
   return (
     <div>
-      <PageHeader title="Reports" subtitle="Generate CSV exports of monitoring, alert, KYC, and audit data." />
+      <PageHeader title="Reports" subtitle="Generate PDF exports of monitoring, alert, KYC, and audit data." />
       <div className="grid gap-4 sm:grid-cols-2">
         {REPORTS.map((r) => (
           <Card key={r.key} className="flex flex-col justify-between p-5">
@@ -44,7 +52,7 @@ export default function Reports() {
               <p className="mt-1 text-sm text-slate-500">{r.description}</p>
             </div>
             <PrimaryButton className="mt-4 self-start" disabled={busyKey === r.key} onClick={() => generate(r)}>
-              {busyKey === r.key ? "Generating…" : "Export CSV"}
+              {busyKey === r.key ? "Generating…" : "Export PDF"}
             </PrimaryButton>
           </Card>
         ))}
