@@ -14,6 +14,7 @@ export default function CashWithdrawal() {
   const [amount, setAmount] = useState("");
   const [result, setResult] = useState<LookupResult | null>(null);
   const [images, setImages] = useState<Record<string, string>>({});
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -25,6 +26,7 @@ export default function CashWithdrawal() {
     setLookupError(null);
     setResult(null);
     setImages({});
+    setImageErrors({});
     setReceipt(null);
     if (!accountNumber.trim()) return;
     setLooking(true);
@@ -34,9 +36,10 @@ export default function CashWithdrawal() {
       if (data.kyc) {
         (["ownPhoto", "nidFront", "nidBack", "signature"] as const).forEach((kind) => {
           if (data.kyc!.hasDocuments[kind]) {
-            api.getBlobUrl(`/api/employee/kyc/${data.kyc!.id}/document/${kind}`).then((url) => {
-              setImages((prev) => ({ ...prev, [kind]: url }));
-            });
+            api
+              .getBlobUrl(`/api/employee/kyc/${data.kyc!.id}/document/${kind}`)
+              .then((url) => setImages((prev) => ({ ...prev, [kind]: url })))
+              .catch(() => setImageErrors((prev) => ({ ...prev, [kind]: true })));
           }
         });
       }
@@ -135,10 +138,10 @@ export default function CashWithdrawal() {
                   <Row label="NID number" value={result.kyc.nidNumber} />
                 </dl>
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                  <DocPreview label="Applicant photo" src={images.ownPhoto} available={result.kyc.hasDocuments.ownPhoto} />
-                  <DocPreview label="NID front" src={images.nidFront} available={result.kyc.hasDocuments.nidFront} />
-                  <DocPreview label="NID back" src={images.nidBack} available={result.kyc.hasDocuments.nidBack} />
-                  <DocPreview label="Signature" src={images.signature} available={result.kyc.hasDocuments.signature} />
+                  <DocPreview label="Applicant photo" src={images.ownPhoto} available={result.kyc.hasDocuments.ownPhoto} failed={imageErrors.ownPhoto} />
+                  <DocPreview label="NID front" src={images.nidFront} available={result.kyc.hasDocuments.nidFront} failed={imageErrors.nidFront} />
+                  <DocPreview label="NID back" src={images.nidBack} available={result.kyc.hasDocuments.nidBack} failed={imageErrors.nidBack} />
+                  <DocPreview label="Signature" src={images.signature} available={result.kyc.hasDocuments.signature} failed={imageErrors.signature} />
                 </div>
               </>
             ) : (
@@ -170,7 +173,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DocPreview({ label, src, available }: { label: string; src?: string; available: boolean }) {
+function DocPreview({ label, src, available, failed }: { label: string; src?: string; available: boolean; failed?: boolean }) {
   return (
     <div>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
@@ -178,6 +181,8 @@ function DocPreview({ label, src, available }: { label: string; src?: string; av
           <span className="text-xs text-slate-400">Not on file</span>
         ) : src ? (
           <img src={src} alt={label} className="h-full w-full object-contain" />
+        ) : failed ? (
+          <span className="px-2 text-center text-xs text-red-500">Not available</span>
         ) : (
           <span className="text-xs text-slate-400">Loading…</span>
         )}

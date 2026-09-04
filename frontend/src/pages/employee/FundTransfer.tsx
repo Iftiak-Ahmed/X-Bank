@@ -13,6 +13,7 @@ export default function FundTransfer() {
   const [senderAccountNumber, setSenderAccountNumber] = useState("");
   const [sender, setSender] = useState<LookupResult | null>(null);
   const [senderImages, setSenderImages] = useState<Record<string, string>>({});
+  const [senderImageErrors, setSenderImageErrors] = useState<Record<string, boolean>>({});
   const [senderError, setSenderError] = useState<string | null>(null);
   const [senderLooking, setSenderLooking] = useState(false);
 
@@ -30,6 +31,7 @@ export default function FundTransfer() {
     setSenderError(null);
     setSender(null);
     setSenderImages({});
+    setSenderImageErrors({});
     if (!senderAccountNumber.trim()) return;
     setSenderLooking(true);
     try {
@@ -38,9 +40,10 @@ export default function FundTransfer() {
       if (data.kyc) {
         (["ownPhoto", "nidFront", "nidBack", "signature"] as const).forEach((kind) => {
           if (data.kyc!.hasDocuments[kind]) {
-            api.getBlobUrl(`/api/employee/kyc/${data.kyc!.id}/document/${kind}`).then((url) => {
-              setSenderImages((prev) => ({ ...prev, [kind]: url }));
-            });
+            api
+              .getBlobUrl(`/api/employee/kyc/${data.kyc!.id}/document/${kind}`)
+              .then((url) => setSenderImages((prev) => ({ ...prev, [kind]: url })))
+              .catch(() => setSenderImageErrors((prev) => ({ ...prev, [kind]: true })));
           }
         });
       }
@@ -127,10 +130,10 @@ export default function FundTransfer() {
                     <StatusPill status={sender.kyc.status} />
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3">
-                    <DocPreview label="Photo" src={senderImages.ownPhoto} available={sender.kyc.hasDocuments.ownPhoto} />
-                    <DocPreview label="NID front" src={senderImages.nidFront} available={sender.kyc.hasDocuments.nidFront} />
-                    <DocPreview label="NID back" src={senderImages.nidBack} available={sender.kyc.hasDocuments.nidBack} />
-                    <DocPreview label="Signature" src={senderImages.signature} available={sender.kyc.hasDocuments.signature} />
+                    <DocPreview label="Photo" src={senderImages.ownPhoto} available={sender.kyc.hasDocuments.ownPhoto} failed={senderImageErrors.ownPhoto} />
+                    <DocPreview label="NID front" src={senderImages.nidFront} available={sender.kyc.hasDocuments.nidFront} failed={senderImageErrors.nidFront} />
+                    <DocPreview label="NID back" src={senderImages.nidBack} available={sender.kyc.hasDocuments.nidBack} failed={senderImageErrors.nidBack} />
+                    <DocPreview label="Signature" src={senderImages.signature} available={sender.kyc.hasDocuments.signature} failed={senderImageErrors.signature} />
                   </div>
                 </>
               ) : (
@@ -206,7 +209,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DocPreview({ label, src, available }: { label: string; src?: string; available: boolean }) {
+function DocPreview({ label, src, available, failed }: { label: string; src?: string; available: boolean; failed?: boolean }) {
   return (
     <div>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
@@ -214,6 +217,8 @@ function DocPreview({ label, src, available }: { label: string; src?: string; av
           <span className="text-xs text-slate-400">Not on file</span>
         ) : src ? (
           <img src={src} alt={label} className="h-full w-full object-contain" />
+        ) : failed ? (
+          <span className="px-2 text-center text-xs text-red-500">Not available</span>
         ) : (
           <span className="text-xs text-slate-400">Loading…</span>
         )}

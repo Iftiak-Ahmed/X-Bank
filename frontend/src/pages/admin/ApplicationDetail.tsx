@@ -9,6 +9,7 @@ export default function ApplicationDetail() {
   const navigate = useNavigate();
   const [app, setApp] = useState<any>(null);
   const [images, setImages] = useState<Record<string, string>>({});
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,9 +21,10 @@ export default function ApplicationDetail() {
       setApp(a);
       (["ownPhoto", "nidFront", "nidBack", "signature"] as const).forEach((kind) => {
         if (a.documents?.[kind]) {
-          api.getBlobUrl(`/api/admin/applications/${id}/document/${kind}`).then((url) => {
-            setImages((prev) => ({ ...prev, [kind]: url }));
-          });
+          api
+            .getBlobUrl(`/api/admin/applications/${id}/document/${kind}`)
+            .then((url) => setImages((prev) => ({ ...prev, [kind]: url })))
+            .catch(() => setImageErrors((prev) => ({ ...prev, [kind]: true })));
         }
       });
     });
@@ -110,10 +112,10 @@ export default function ApplicationDetail() {
         <Card className="p-5">
           <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">KYC documents</h2>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <DocPreview label="Applicant photo" src={images.ownPhoto} />
-            <DocPreview label={app.docType === "passport" ? "Passport photo" : "NID front"} src={images.nidFront} />
-            {app.docType !== "passport" && <DocPreview label="NID back" src={images.nidBack} />}
-            <DocPreview label="Signature" src={images.signature} />
+            <DocPreview label="Applicant photo" src={images.ownPhoto} failed={imageErrors.ownPhoto} />
+            <DocPreview label={app.docType === "passport" ? "Passport photo" : "NID front"} src={images.nidFront} failed={imageErrors.nidFront} />
+            {app.docType !== "passport" && <DocPreview label="NID back" src={images.nidBack} failed={imageErrors.nidBack} />}
+            <DocPreview label="Signature" src={images.signature} failed={imageErrors.signature} />
           </div>
 
           {app.status === "pending_approval" || app.status === "info_requested" ? (
@@ -145,11 +147,17 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DocPreview({ label, src }: { label: string; src?: string }) {
+function DocPreview({ label, src, failed }: { label: string; src?: string; failed?: boolean }) {
   return (
     <div>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-        {src ? <img src={src} alt={label} className="h-full w-full object-contain" /> : <span className="text-xs text-slate-400">Loading…</span>}
+        {src ? (
+          <img src={src} alt={label} className="h-full w-full object-contain" />
+        ) : failed ? (
+          <span className="px-2 text-center text-xs text-red-500">Not available</span>
+        ) : (
+          <span className="text-xs text-slate-400">Loading…</span>
+        )}
       </div>
       <p className="mt-1 text-center text-xs text-slate-500">{label}</p>
     </div>
