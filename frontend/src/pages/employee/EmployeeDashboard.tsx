@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { UserCheck, Banknote } from "lucide-react";
 import { api } from "../../lib/api";
 import { Card, KpiCard, LoadingState, PageHeader, money } from "../../components/Shared";
 
@@ -65,8 +64,8 @@ export default function EmployeeDashboard() {
     <div>
       <PageHeader title="Operational Dashboard" subtitle="Branch activity at a glance." />
       <div className="grid gap-4 sm:grid-cols-2">
-        <KpiCard label="Total Customers" value={data.customerCount} tone="teal" icon={<UserCheck className="h-5 w-5" />} />
-        <KpiCard label="Today's Transaction" value={todayTotal === null ? "…" : money(todayTotal)} tone="sky" icon={<Banknote className="h-5 w-5" />} />
+        <KpiCard label="Total Customers" value={data.customerCount} tone="teal" />
+        <KpiCard label="Today's Transaction" value={todayTotal === null ? "…" : money(todayTotal)} tone="sky" />
       </div>
 
       <Card className="mt-6 p-5">

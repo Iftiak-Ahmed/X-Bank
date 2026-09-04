@@ -25,10 +25,10 @@ export default function KycMonitoring() {
       <PageHeader title="KYC Monitoring" subtitle="Identity verification status across all customers." />
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <KpiCard label="Verified" value={counts.verified} />
-        <KpiCard label="Pending" value={counts.pending} accent="text-amber-600" />
-        <KpiCard label="Expired" value={counts.expired} accent="text-red-600" />
-        <KpiCard label="Rejected" value={counts.rejected} accent="text-red-600" />
+        <KpiCard label="Verified" value={counts.verified} tone="teal" />
+        <KpiCard label="Pending" value={counts.pending} tone="amber" />
+        <KpiCard label="Expired" value={counts.expired} tone="orange" />
+        <KpiCard label="Rejected" value={counts.rejected} tone="rose" />
       </div>
 
       <div className="my-4 flex gap-2">
