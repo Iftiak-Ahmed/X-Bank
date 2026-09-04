@@ -151,20 +151,11 @@ async function updateAlert(req: any, res: any, updates: Record<string, unknown>,
   res.json({ id: updated.id, ...updated.data() });
 }
 
-complianceRouter.post("/alerts/:id/assign", asyncHandler(async (req, res) => {
-  const assignTo = req.body.assignTo ?? req.user!.uid;
-  await updateAlert(req, res, { status: "under_review", assignedTo: assignTo }, "assigned");
-}));
-
 const noteSchema = z.object({ note: z.string().min(1) });
 complianceRouter.post("/alerts/:id/notes", asyncHandler(async (req, res) => {
   const parsed = noteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Note text required" });
   await updateAlert(req, res, {}, "note_added", parsed.data.note);
-}));
-
-complianceRouter.post("/alerts/:id/escalate", asyncHandler(async (req, res) => {
-  await updateAlert(req, res, { status: "escalated" }, "escalated", req.body.note ?? "Escalated to compliance manager.");
 }));
 
 complianceRouter.post("/alerts/:id/false-positive", asyncHandler(async (req, res) => {

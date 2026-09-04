@@ -47,7 +47,6 @@ export default function AlertDetail() {
             <div className="flex justify-between"><dt className="text-slate-500">Risk</dt><dd><RiskChip level={alert.riskLevel} /></dd></div>
             <Row label="Rule" value={alert.primaryRuleCode} />
             <Row label="Created" value={formatDate(alert.createdAt)} />
-            <Row label="Assigned" value={alert.assignedTo ? alert.assignedTo.slice(0, 10) : "Unassigned"} />
           </dl>
           <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Reasons</h3>
           <ul className="mt-2 space-y-1 text-sm text-slate-600">
@@ -107,8 +106,6 @@ export default function AlertDetail() {
           </form>
 
           <div className="mt-4 space-y-2">
-            <PrimaryButton disabled={busy} onClick={() => act("assign")} className="w-full">Assign to me</PrimaryButton>
-            <SecondaryButton disabled={busy} onClick={() => act("escalate")} className="w-full">Escalate</SecondaryButton>
             <SecondaryButton disabled={busy} onClick={() => act("false-positive")} className="w-full">Mark False Positive</SecondaryButton>
             <SecondaryButton disabled={busy} onClick={() => act("resolve")} className="w-full">Resolve</SecondaryButton>
             <PrimaryButton disabled={busy} onClick={() => act("close")} className="w-full bg-slate-700 hover:bg-slate-800">

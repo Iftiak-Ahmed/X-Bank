@@ -199,6 +199,43 @@ adminRouter.get("/dashboard/suspicious-transactions/:id/violations", asyncHandle
 }));
 
 // ---------------------------------------------------------------------------
+// Compliance alerts — read-only for admin, so they can see the same alerts,
+// rule violations, and risk scores compliance works with, without taking over
+// the investigation actions (notes/false-positive/resolve/close stay
+// compliance-officer-only, on the compliance router).
+// ---------------------------------------------------------------------------
+
+adminRouter.get("/alerts", asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  let q: FirebaseFirestore.Query = db.collection("complianceAlerts");
+  if (status) q = q.where("status", "==", status);
+  q = q.orderBy("createdAt", "desc").limit(100);
+  const snap = await q.get();
+  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+}));
+
+adminRouter.get("/alerts/:id", asyncHandler(async (req, res) => {
+  const alertSnap = await db.collection("complianceAlerts").doc(req.params.id).get();
+  if (!alertSnap.exists) return res.status(404).json({ error: "Not found" });
+  const alert = alertSnap.data()!;
+
+  const [txSnap, investigationsSnap, evidenceSnap] = await Promise.all([
+    alert.transactionId ? db.collection("transactions").doc(alert.transactionId).get() : Promise.resolve(null),
+    db.collection("investigations").where("alertId", "==", req.params.id).orderBy("updatedAt", "desc").get(),
+    alert.evidenceIds?.length
+      ? db.collection("evidence").where("__name__", "in", alert.evidenceIds.slice(0, 10)).get()
+      : Promise.resolve({ docs: [] } as any),
+  ]);
+
+  res.json({
+    alert: { id: alertSnap.id, ...alert },
+    transaction: txSnap && txSnap.exists ? { id: txSnap.id, ...txSnap.data() } : null,
+    investigations: investigationsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
+    evidence: evidenceSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
+  });
+}));
+
+// ---------------------------------------------------------------------------
 // Client applications (KYC review + approval)
 // ---------------------------------------------------------------------------
 

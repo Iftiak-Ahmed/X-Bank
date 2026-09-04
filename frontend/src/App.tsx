@@ -47,6 +47,8 @@ import ApplicationDetail from "./pages/admin/ApplicationDetail";
 import AdminFrameworks from "./pages/admin/Frameworks";
 import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
 import BankAudit from "./pages/admin/BankAudit";
+import AdminAlerts from "./pages/admin/Alerts";
+import AdminAlertDetail from "./pages/admin/AlertDetail";
 import StaffProfile from "./pages/shared/StaffProfile";
 
 const CLIENT_NAV = [
@@ -86,6 +88,7 @@ const ADMIN_NAV = [
   { label: "Compliance Rules", to: "/admin/rules" },
   { label: "System Log", to: "/admin/audit-logs" },
   { label: "Bank Audit", to: "/admin/bank-audit" },
+  { label: "Alerts", to: "/admin/alerts" },
 ];
 
 function ChangePasswordRoute() {
@@ -177,6 +180,8 @@ export default function App() {
             <Route path="/admin/frameworks" element={<AdminFrameworks />} />
             <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
             <Route path="/admin/bank-audit" element={<BankAudit />} />
+            <Route path="/admin/alerts" element={<AdminAlerts />} />
+            <Route path="/admin/alerts/:id" element={<AdminAlertDetail />} />
             <Route path="/admin/profile" element={<StaffProfile />} />
           </Route>
         </Routes>
