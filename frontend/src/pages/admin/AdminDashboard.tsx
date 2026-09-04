@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../../lib/api";
 import { Card, EmptyState, KpiCard, LoadingState, PageHeader, Td, Th, money } from "../../components/Shared";
 import { RiskChip, StatusPill } from "../../components/RiskChip";
@@ -19,9 +19,16 @@ interface Kpis {
 
 interface DailyActivity {
   date: string;
-  amount: number;
-  count: number;
+  cashIn: number;
+  transfer: number;
+  withdrawal: number;
 }
+
+const SERIES = [
+  { key: "cashIn", label: "Cash In", color: "#1f6f6b" },
+  { key: "transfer", label: "Balance Transfer", color: "#14335c" },
+  { key: "withdrawal", label: "Withdrawal", color: "#b45309" },
+] as const;
 
 function compactAmount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -39,8 +46,12 @@ function ActivityTooltip({ active, payload, label }: any) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
       <div className="font-semibold text-navy-900">{shortDate(label)}</div>
-      <div className="mt-1 text-slate-600">{money(point.amount)}</div>
-      <div className="text-slate-400">{point.count} transaction{point.count === 1 ? "" : "s"}</div>
+      {SERIES.map((s) => (
+        <div key={s.key} className="mt-1 flex items-center gap-1.5 text-slate-600">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+          {s.label}: {money(point[s.key])}
+        </div>
+      ))}
     </div>
   );
 }
@@ -97,21 +108,22 @@ export default function AdminDashboard() {
 
       <Card className="mt-6 p-5">
         <h2 className="font-serif text-lg font-semibold text-navy-900">Transaction Activity</h2>
-        <p className="text-sm text-slate-500">Daily transaction volume, last 14 days.</p>
+        <p className="text-sm text-slate-500">Cash in, balance transfer, and withdrawal amounts — past 4 days, today, and the next 2 days.</p>
         <div className="mt-4 h-64">
           {!activity ? (
             <LoadingState />
-          ) : activity.every((d) => d.count === 0) ? (
-            <EmptyState message="No transactions in the last 14 days." />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={activity} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+              <LineChart data={activity} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
                 <CartesianGrid stroke="#e2e8f0" vertical={false} />
                 <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
                 <YAxis tickFormatter={compactAmount} tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={48} />
-                <Tooltip content={<ActivityTooltip />} cursor={{ fill: "#f1f5f9" }} />
-                <Bar dataKey="amount" fill="#1f6f6b" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              </BarChart>
+                <Tooltip content={<ActivityTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: 4 }} />
+                <Legend formatter={(value) => <span className="text-xs text-slate-600">{value}</span>} iconType="circle" iconSize={8} />
+                {SERIES.map((s) => (
+                  <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                ))}
+              </LineChart>
             </ResponsiveContainer>
           )}
         </div>

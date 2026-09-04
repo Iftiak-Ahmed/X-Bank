@@ -99,33 +99,43 @@ adminRouter.get("/dashboard", asyncHandler(async (_req, res) => {
   });
 }));
 
+const CASH_IN_TYPES = new Set(["cash_in", "deposit", "dps_deposit"]);
+const TRANSFER_TYPES = new Set(["transfer", "fund_transfer"]);
+const WITHDRAWAL_TYPES = new Set(["withdrawal", "cash_out"]);
+
+// Fixed 7-day window: 4 days back through 2 days ahead, with "today" always at
+// index 4 — the future days simply render with zero activity until it happens,
+// so the chart's shape (and where "today" sits on it) never shifts.
 adminRouter.get("/dashboard/transaction-activity", asyncHandler(async (_req, res) => {
-  const days = 14;
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const daysBack = 4;
+  const daysForward = 2;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - daysBack);
 
   const snap = await db.collection("transactions").where("createdAt", ">=", cutoff).get();
 
-  const byDay = new Map<string, { amount: number; count: number }>();
-  for (let i = 0; i < days; i++) {
-    const d = new Date(cutoff);
-    d.setDate(cutoff.getDate() + i);
-    byDay.set(localDateKey(d), { amount: 0, count: 0 });
+  const byDay = new Map<string, { cashIn: number; transfer: number; withdrawal: number }>();
+  for (let i = -daysBack; i <= daysForward; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + i);
+    byDay.set(localDateKey(d), { cashIn: 0, transfer: 0, withdrawal: 0 });
   }
 
   snap.docs.forEach((doc) => {
     const data = doc.data();
     const createdAt = data.createdAt?.toDate?.();
     if (!createdAt) return;
-    const key = localDateKey(createdAt);
-    const bucket = byDay.get(key);
+    const bucket = byDay.get(localDateKey(createdAt));
     if (!bucket) return;
-    bucket.amount += Number(data.amount ?? 0);
-    bucket.count += 1;
+    const amount = Number(data.amount ?? 0);
+    if (CASH_IN_TYPES.has(data.type)) bucket.cashIn += amount;
+    else if (TRANSFER_TYPES.has(data.type)) bucket.transfer += amount;
+    else if (WITHDRAWAL_TYPES.has(data.type)) bucket.withdrawal += amount;
   });
 
-  res.json([...byDay.entries()].map(([date, v]) => ({ date, amount: v.amount, count: v.count })));
+  res.json([...byDay.entries()].map(([date, v]) => ({ date, cashIn: v.cashIn, transfer: v.transfer, withdrawal: v.withdrawal })));
 }));
 
 adminRouter.get("/dashboard/suspicious-transactions", asyncHandler(async (req, res) => {
