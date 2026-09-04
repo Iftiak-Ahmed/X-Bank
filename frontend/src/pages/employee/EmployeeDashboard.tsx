@@ -64,8 +64,8 @@ export default function EmployeeDashboard() {
     <div>
       <PageHeader title="Operational Dashboard" subtitle="Branch activity at a glance." />
       <div className="grid gap-4 sm:grid-cols-2">
-        <KpiCard label="Total Customers" value={data.customerCount} tone="teal" />
-        <KpiCard label="Today's Transaction" value={todayTotal === null ? "…" : money(todayTotal)} tone="sky" />
+        <KpiCard label="Total Customers" value={data.customerCount} />
+        <KpiCard label="Today's Transaction" value={todayTotal === null ? "…" : money(todayTotal)} />
       </div>
 
       <Card className="mt-6 p-5">

@@ -50,11 +50,11 @@ export default function ComplianceDashboard() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="Total Customers" value={kpis.totalCustomers} tone="teal" />
-        <KpiCard label="Total Transactions" value={kpis.totalTransactions} tone="sky" />
-        <KpiCard label="Open Alerts" value={kpis.openAlerts} tone="amber" />
-        <KpiCard label="Critical Alerts" value={kpis.criticalAlerts} tone="rose" />
-        <KpiCard label="KYC Issues" value={kpis.kycIssues} tone="violet" />
+        <KpiCard label="Total Customers" value={kpis.totalCustomers} />
+        <KpiCard label="Total Transactions" value={kpis.totalTransactions} />
+        <KpiCard label="Open Alerts" value={kpis.openAlerts} accent={kpis.openAlerts > 0 ? "text-amber-600" : undefined} />
+        <KpiCard label="Critical Alerts" value={kpis.criticalAlerts} accent={kpis.criticalAlerts > 0 ? "text-red-600" : undefined} />
+        <KpiCard label="KYC Issues" value={kpis.kycIssues} />
       </div>
 
       <Card className="mt-6">

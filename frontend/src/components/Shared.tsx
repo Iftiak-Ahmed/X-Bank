@@ -58,26 +58,12 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <div className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
 }
 
-export type KpiTone = "navy" | "teal" | "sky" | "violet" | "amber" | "rose" | "orange" | "emerald";
-
-const KPI_TONES: Record<KpiTone, { bg: string; label: string; value: string }> = {
-  navy: { bg: "bg-navy-900", label: "text-navy-200", value: "text-white" },
-  teal: { bg: "bg-teal-600", label: "text-teal-100", value: "text-white" },
-  sky: { bg: "bg-sky-500", label: "text-sky-50", value: "text-white" },
-  violet: { bg: "bg-violet-500", label: "text-violet-50", value: "text-white" },
-  amber: { bg: "bg-amber-500", label: "text-amber-50", value: "text-white" },
-  rose: { bg: "bg-rose-500", label: "text-rose-50", value: "text-white" },
-  orange: { bg: "bg-orange-500", label: "text-orange-50", value: "text-white" },
-  emerald: { bg: "bg-emerald-500", label: "text-emerald-50", value: "text-white" },
-};
-
-export function KpiCard({ label, value, tone = "navy" }: { label: string; value: ReactNode; tone?: KpiTone }) {
-  const t = KPI_TONES[tone];
+export function KpiCard({ label, value, accent }: { label: string; value: ReactNode; accent?: string }) {
   return (
-    <div className={`rounded-xl p-5 shadow-sm ${t.bg}`}>
-      <div className={`text-xs font-semibold uppercase tracking-wide ${t.label}`}>{label}</div>
-      <div className={`mt-1 truncate font-serif text-2xl font-semibold ${t.value}`}>{value}</div>
-    </div>
+    <Card className="p-5">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={`mt-1 font-serif text-2xl font-semibold ${accent ?? "text-navy-900"}`}>{value}</div>
+    </Card>
   );
 }
 
