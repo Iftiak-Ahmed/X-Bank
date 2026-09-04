@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { useAuth, dashboardPathForRole } from "../../context/AuthContext";
 import { passwordRequirements, passwordStrength } from "../../lib/passwordStrength";
+import { PasswordInput } from "../../components/Shared";
 
 const STRENGTH_LABEL: Record<string, string> = { weak: "Weak", medium: "Medium", strong: "Strong" };
 const STRENGTH_COLOR: Record<string, string> = { weak: "bg-red-500", medium: "bg-amber-500", strong: "bg-teal-600" };
@@ -51,11 +52,10 @@ export default function ChangePassword() {
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">New password</label>
-            <input
-              type="password"
+            <PasswordInput
               required
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={setNewPassword}
               className="mt-1 w-full rounded-lg border border-slate-400 bg-slate-50 px-3 py-2 text-sm shadow-sm focus:border-teal-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-600"
             />
 
@@ -82,11 +82,10 @@ export default function ChangePassword() {
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Confirm password</label>
-            <input
-              type="password"
+            <PasswordInput
               required
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={setConfirm}
               className="mt-1 w-full rounded-lg border border-slate-400 bg-slate-50 px-3 py-2 text-sm shadow-sm focus:border-teal-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-600"
             />
           </div>
