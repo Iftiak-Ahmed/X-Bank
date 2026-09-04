@@ -55,6 +55,7 @@ export const api = {
       res = await fetch(`${BASE_URL}${path}`, { method: "POST", headers: await authHeader(true), body: formData });
     }
     if (!res.ok) throw new Error(await parseError(res));
+    if (res.status === 204) return undefined as T;
     return res.json();
   },
 
