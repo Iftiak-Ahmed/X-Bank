@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { UserCheck, ArrowLeftRight, Bell, ShieldAlert, IdCard } from "lucide-react";
 import { api } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
 import { Card, EmptyState, KpiCard, LoadingState, PageHeader, Td, Th, money, formatDate } from "../../components/Shared";
@@ -50,11 +51,23 @@ export default function ComplianceDashboard() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="Total Customers" value={kpis.totalCustomers} />
-        <KpiCard label="Total Transactions" value={kpis.totalTransactions} />
-        <KpiCard label="Open Alerts" value={kpis.openAlerts} accent={kpis.openAlerts > 0 ? "text-amber-600" : undefined} />
-        <KpiCard label="Critical Alerts" value={kpis.criticalAlerts} accent={kpis.criticalAlerts > 0 ? "text-red-600" : undefined} />
-        <KpiCard label="KYC Issues" value={kpis.kycIssues} />
+        <KpiCard label="Total Customers" value={kpis.totalCustomers} tone="teal" icon={<UserCheck className="h-5 w-5" />} />
+        <KpiCard label="Total Transactions" value={kpis.totalTransactions} tone="sky" icon={<ArrowLeftRight className="h-5 w-5" />} />
+        <KpiCard
+          label="Open Alerts"
+          value={kpis.openAlerts}
+          accent={kpis.openAlerts > 0 ? "text-amber-600" : undefined}
+          tone="amber"
+          icon={<Bell className="h-5 w-5" />}
+        />
+        <KpiCard
+          label="Critical Alerts"
+          value={kpis.criticalAlerts}
+          accent={kpis.criticalAlerts > 0 ? "text-red-600" : undefined}
+          tone="rose"
+          icon={<ShieldAlert className="h-5 w-5" />}
+        />
+        <KpiCard label="KYC Issues" value={kpis.kycIssues} tone="violet" icon={<IdCard className="h-5 w-5" />} />
       </div>
 
       <Card className="mt-6">

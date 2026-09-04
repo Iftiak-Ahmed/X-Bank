@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Users, UserCheck, ArrowLeftRight, ShieldCheck, FileClock, Bell, ShieldAlert, Flame } from "lucide-react";
 import { api } from "../../lib/api";
 import { Card, EmptyState, KpiCard, LoadingState, PageHeader, Td, Th, money } from "../../components/Shared";
 import { RiskChip, StatusPill } from "../../components/RiskChip";
@@ -83,16 +84,40 @@ export default function AdminDashboard() {
       <LoginApprovalPanel />
       <PageHeader title="System Overview" subtitle="X Bank — governance at a glance." />
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        <KpiCard label="Total Users" value={kpis.totalUsers} />
-        <KpiCard label="Total Customers" value={kpis.totalCustomers} />
-        <KpiCard label="Total Transactions" value={kpis.totalTransactions} />
-        <KpiCard label="Compliance Rules" value={kpis.totalRules} />
+        <KpiCard label="Total Users" value={kpis.totalUsers} tone="navy" icon={<Users className="h-5 w-5" />} />
+        <KpiCard label="Total Customers" value={kpis.totalCustomers} tone="teal" icon={<UserCheck className="h-5 w-5" />} />
+        <KpiCard label="Total Transactions" value={kpis.totalTransactions} tone="sky" icon={<ArrowLeftRight className="h-5 w-5" />} />
+        <KpiCard label="Compliance Rules" value={kpis.totalRules} tone="violet" icon={<ShieldCheck className="h-5 w-5" />} />
         <Link to="/admin/applications">
-          <KpiCard label="Pending Applications" value={kpis.pendingApplications} accent={kpis.pendingApplications > 0 ? "text-amber-600" : undefined} />
+          <KpiCard
+            label="Pending Applications"
+            value={kpis.pendingApplications}
+            accent={kpis.pendingApplications > 0 ? "text-amber-600" : undefined}
+            tone="amber"
+            icon={<FileClock className="h-5 w-5" />}
+          />
         </Link>
-        <KpiCard label="Open Alerts" value={kpis.openAlerts} accent={kpis.openAlerts > 0 ? "text-amber-600" : undefined} />
-        <KpiCard label="Critical Alerts" value={kpis.criticalAlerts} accent={kpis.criticalAlerts > 0 ? "text-red-600" : undefined} />
-        <KpiCard label="High-Risk Transactions" value={kpis.highRiskTransactions} accent={kpis.highRiskTransactions > 0 ? "text-red-600" : undefined} />
+        <KpiCard
+          label="Open Alerts"
+          value={kpis.openAlerts}
+          accent={kpis.openAlerts > 0 ? "text-amber-600" : undefined}
+          tone="amber"
+          icon={<Bell className="h-5 w-5" />}
+        />
+        <KpiCard
+          label="Critical Alerts"
+          value={kpis.criticalAlerts}
+          accent={kpis.criticalAlerts > 0 ? "text-red-600" : undefined}
+          tone="rose"
+          icon={<ShieldAlert className="h-5 w-5" />}
+        />
+        <KpiCard
+          label="High-Risk Transactions"
+          value={kpis.highRiskTransactions}
+          accent={kpis.highRiskTransactions > 0 ? "text-red-600" : undefined}
+          tone="orange"
+          icon={<Flame className="h-5 w-5" />}
+        />
       </div>
 
       <Card className="mt-6 p-5">

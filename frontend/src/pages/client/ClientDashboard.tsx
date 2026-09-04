@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Wallet, ShieldCheck, ArrowLeftRight, UserPlus, ListChecks } from "lucide-react";
 import { api } from "../../lib/api";
 import { Card, EmptyState, LoadingState, PageHeader, money } from "../../components/Shared";
 import { StatusPill } from "../../components/RiskChip";
@@ -59,18 +60,30 @@ export default function ClientDashboard() {
       <PageHeader title={summary.customer?.fullName ?? "there"} />
 
       <div className="grid gap-6 md:grid-cols-3">
-        <Card className="p-6 md:col-span-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Available Balance</div>
-          <div className="mt-1 font-serif text-4xl font-semibold text-navy-900">{money(summary.totalBalance)}</div>
+        <Card className="relative overflow-hidden bg-gradient-to-br from-navy-950 via-navy-900 to-teal-700 p-6 text-white md:col-span-2">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-teal-200/80">Available Balance</div>
+              <div className="mt-1 font-serif text-4xl font-semibold text-white">{money(summary.totalBalance)}</div>
+            </div>
+            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-white/15 text-white">
+              <Wallet className="h-5 w-5" />
+            </div>
+          </div>
           <div className="mt-6 flex flex-wrap gap-3">
-            <QuickAction to="/transfer" label="Transfer Money" />
-            <QuickAction to="/beneficiaries" label="Add Beneficiary" />
-            <QuickAction to="/transactions" label="View Transactions" />
+            <QuickAction to="/transfer" label="Transfer Money" icon={<ArrowLeftRight className="h-4 w-4" />} />
+            <QuickAction to="/beneficiaries" label="Add Beneficiary" icon={<UserPlus className="h-4 w-4" />} />
+            <QuickAction to="/transactions" label="View Transactions" icon={<ListChecks className="h-4 w-4" />} />
           </div>
         </Card>
 
         <Card className="p-6">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Account Status</div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Account Status</div>
+            <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-teal-600/10 text-teal-700">
+              <ShieldCheck className="h-4 w-4" />
+            </div>
+          </div>
           <div className="mt-3 space-y-3 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-slate-500">KYC Status</span>
@@ -107,12 +120,13 @@ export default function ClientDashboard() {
   );
 }
 
-function QuickAction({ to, label }: { to: string; label: string }) {
+function QuickAction({ to, label, icon }: { to: string; label: string; icon?: ReactNode }) {
   return (
     <Link
       to={to}
-      className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-navy-900 transition hover:border-teal-600 hover:bg-teal-50"
+      className="flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
     >
+      {icon}
       {label}
     </Link>
   );

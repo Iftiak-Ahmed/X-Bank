@@ -58,11 +58,48 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <div className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
 }
 
-export function KpiCard({ label, value, accent }: { label: string; value: ReactNode; accent?: string }) {
+export type KpiTone = "navy" | "teal" | "sky" | "violet" | "amber" | "rose" | "orange" | "emerald";
+
+const KPI_TONES: Record<KpiTone, { bg: string; text: string; top: string }> = {
+  navy: { bg: "bg-navy-900/10", text: "text-navy-900", top: "before:bg-navy-900" },
+  teal: { bg: "bg-teal-600/10", text: "text-teal-700", top: "before:bg-teal-600" },
+  sky: { bg: "bg-sky-100", text: "text-sky-600", top: "before:bg-sky-500" },
+  violet: { bg: "bg-violet-100", text: "text-violet-600", top: "before:bg-violet-500" },
+  amber: { bg: "bg-amber-100", text: "text-amber-700", top: "before:bg-amber-500" },
+  rose: { bg: "bg-rose-100", text: "text-rose-600", top: "before:bg-rose-500" },
+  orange: { bg: "bg-orange-100", text: "text-orange-600", top: "before:bg-orange-500" },
+  emerald: { bg: "bg-emerald-100", text: "text-emerald-600", top: "before:bg-emerald-500" },
+};
+
+export function KpiCard({
+  label,
+  value,
+  accent,
+  tone = "navy",
+  icon,
+}: {
+  label: string;
+  value: ReactNode;
+  accent?: string;
+  tone?: KpiTone;
+  icon?: ReactNode;
+}) {
+  const t = KPI_TONES[tone];
   return (
-    <Card className="p-5">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className={`mt-1 font-serif text-2xl font-semibold ${accent ?? "text-navy-900"}`}>{value}</div>
+    <Card
+      className={`relative overflow-hidden p-5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:content-[''] ${t.top}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+          <div className={`mt-1 truncate font-serif text-2xl font-semibold ${accent ?? "text-navy-900"}`}>{value}</div>
+        </div>
+        {icon && (
+          <div className={`flex h-10 w-10 flex-none items-center justify-center rounded-full ${t.bg} ${t.text}`}>
+            {icon}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }
