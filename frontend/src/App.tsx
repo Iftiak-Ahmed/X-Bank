@@ -87,8 +87,8 @@ const ADMIN_NAV = [
   { label: "Frameworks", to: "/admin/frameworks" },
   { label: "Compliance Rules", to: "/admin/rules" },
   { label: "System Log", to: "/admin/audit-logs" },
-  { label: "Bank Audit", to: "/admin/bank-audit" },
   { label: "Alerts", to: "/admin/alerts" },
+  { label: "Bank Audit", to: "/admin/bank-audit" },
 ];
 
 function ChangePasswordRoute() {
