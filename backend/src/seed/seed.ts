@@ -1,7 +1,7 @@
 import { auth, db, FieldValue } from "../config/firebase";
 import { generateAccountNumber, generateApplicationId } from "../utils/ids";
 import { generateUniqueUserId } from "../utils/unique";
-import { saveKycDocument, hashBuffer } from "../utils/fileStorage";
+import { saveKycDocument } from "../utils/fileStorage";
 import { Role } from "../types/roles";
 
 const DEMO_PASSWORD = "A#123456";
@@ -243,9 +243,9 @@ async function seedSampleApplications() {
   for (const s of samples) {
     const applicationId = generateApplicationId();
     const documents = {
-      nidFront: { filename: saveKycDocument(applicationId, "nidFront", PLACEHOLDER_PNG, "image/png"), hash: hashBuffer(PLACEHOLDER_PNG), mimeType: "image/png" },
-      nidBack: { filename: saveKycDocument(applicationId, "nidBack", PLACEHOLDER_PNG, "image/png"), hash: hashBuffer(PLACEHOLDER_PNG), mimeType: "image/png" },
-      signature: { filename: saveKycDocument(applicationId, "signature", PLACEHOLDER_PNG, "image/png"), hash: hashBuffer(PLACEHOLDER_PNG), mimeType: "image/png" },
+      nidFront: await saveKycDocument(applicationId, "nidFront", PLACEHOLDER_PNG, "image/png"),
+      nidBack: await saveKycDocument(applicationId, "nidBack", PLACEHOLDER_PNG, "image/png"),
+      signature: await saveKycDocument(applicationId, "signature", PLACEHOLDER_PNG, "image/png"),
     };
     await db.collection("clientApplications").doc(applicationId).set({
       fullName: s.fullName,

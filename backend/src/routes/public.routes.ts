@@ -3,7 +3,7 @@ import multer from "multer";
 import { z } from "zod";
 import { auth, db, FieldValue } from "../config/firebase";
 import { generateApplicationId } from "../utils/ids";
-import { hashBuffer, saveKycDocument } from "../utils/fileStorage";
+import { saveKycDocument } from "../utils/fileStorage";
 import { writeAuditLog } from "../utils/audit";
 import { applicationRateLimit } from "../middleware/rateLimit";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -80,12 +80,12 @@ publicRouter.post(
 
     const applicationId = generateApplicationId();
     const documents: Record<string, { filename: string; hash: string; mimeType: string }> = {
-      nidFront: { filename: saveKycDocument(applicationId, "nidFront", nidFront.buffer, nidFront.mimetype), hash: hashBuffer(nidFront.buffer), mimeType: nidFront.mimetype },
-      signature: { filename: saveKycDocument(applicationId, "signature", signature.buffer, signature.mimetype), hash: hashBuffer(signature.buffer), mimeType: signature.mimetype },
-      ownPhoto: { filename: saveKycDocument(applicationId, "ownPhoto", ownPhoto.buffer, ownPhoto.mimetype), hash: hashBuffer(ownPhoto.buffer), mimeType: ownPhoto.mimetype },
+      nidFront: await saveKycDocument(applicationId, "nidFront", nidFront.buffer, nidFront.mimetype),
+      signature: await saveKycDocument(applicationId, "signature", signature.buffer, signature.mimetype),
+      ownPhoto: await saveKycDocument(applicationId, "ownPhoto", ownPhoto.buffer, ownPhoto.mimetype),
     };
     if (nidBack) {
-      documents.nidBack = { filename: saveKycDocument(applicationId, "nidBack", nidBack.buffer, nidBack.mimetype), hash: hashBuffer(nidBack.buffer), mimeType: nidBack.mimetype };
+      documents.nidBack = await saveKycDocument(applicationId, "nidBack", nidBack.buffer, nidBack.mimetype);
     }
 
     await db

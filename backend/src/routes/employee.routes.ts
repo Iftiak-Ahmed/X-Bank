@@ -167,10 +167,11 @@ employeeRouter.get("/kyc/:kycId/document/:kind", asyncHandler(async (req, res) =
   const doc = kyc.documents?.[req.params.kind];
   if (!doc || !kyc.applicationId) return res.status(404).json({ error: "Document not found" });
 
-  const { buffer, mimeType } = readKycDocument(kyc.applicationId, doc.filename);
-  res.setHeader("Content-Type", mimeType);
+  const stored = await readKycDocument(kyc.applicationId, doc.filename);
+  if (!stored) return res.status(404).json({ error: "Document not found" });
+  res.setHeader("Content-Type", stored.mimeType);
   res.setHeader("Cache-Control", "private, no-store");
-  res.send(buffer);
+  res.send(stored.buffer);
 }));
 
 const cashInSchema = z.object({

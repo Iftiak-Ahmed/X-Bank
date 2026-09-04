@@ -305,10 +305,11 @@ adminRouter.get("/applications/:id/document/:kind", asyncHandler(async (req, res
   const doc = documents?.[req.params.kind];
   if (!doc) return res.status(404).json({ error: "Document not found" });
 
-  const { buffer, mimeType } = readKycDocument(req.params.id, doc.filename);
-  res.setHeader("Content-Type", mimeType);
+  const stored = await readKycDocument(req.params.id, doc.filename);
+  if (!stored) return res.status(404).json({ error: "Document not found" });
+  res.setHeader("Content-Type", stored.mimeType);
   res.setHeader("Cache-Control", "private, no-store");
-  res.send(buffer);
+  res.send(stored.buffer);
 }));
 
 adminRouter.post("/applications/:id/approve", asyncHandler(async (req, res) => {
