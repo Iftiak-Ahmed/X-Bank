@@ -1,5 +1,4 @@
 import { Router } from "express";
-import multer from "multer";
 import { z } from "zod";
 import { db, FieldValue } from "../config/firebase";
 import { requireAuth } from "../middleware/auth";
@@ -7,20 +6,9 @@ import { requireRole } from "../middleware/rbac";
 import { writeAuditLog } from "../utils/audit";
 import { asyncHandler } from "../utils/asyncHandler";
 import { generateReference } from "../utils/ids";
-import { readKycDocument, saveKycDocument, deleteKycDocument, DocumentKind } from "../utils/fileStorage";
+import { readKycDocument } from "../utils/fileStorage";
 import { runComplianceCheck } from "../compliance/monitoringService";
 import { localDateKey } from "../utils/dateKey";
-
-const kycUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const allowed = ["image/jpeg", "image/png", "image/webp"];
-    if (!allowed.includes(file.mimetype)) return cb(new Error("Only JPEG, PNG, or WebP images are allowed."));
-    cb(null, true);
-  },
-});
-const KYC_DOCUMENT_KINDS: DocumentKind[] = ["nidFront", "nidBack", "signature", "ownPhoto"];
 
 export const employeeRouter = Router();
 employeeRouter.use(requireAuth, requireRole("employee"));
@@ -184,67 +172,6 @@ employeeRouter.get("/kyc/:kycId/document/:kind", asyncHandler(async (req, res) =
   res.setHeader("Content-Type", stored.mimeType);
   res.setHeader("Cache-Control", "private, no-store");
   res.send(stored.buffer);
-}));
-
-// Removes a wrongly-uploaded KYC document so the teller can immediately
-// re-upload the correct one (the "Upload" link only appears once a document
-// is missing/failed, so this is what clears a mistaken upload back to that state).
-employeeRouter.delete("/kyc/:kycId/document/:kind", asyncHandler(async (req, res) => {
-  const kind = req.params.kind as DocumentKind;
-  if (!KYC_DOCUMENT_KINDS.includes(kind)) return res.status(400).json({ error: "Invalid document kind." });
-
-  const ref = db.collection("kycRecords").doc(req.params.kycId);
-  const snap = await ref.get();
-  if (!snap.exists) return res.status(404).json({ error: "Not found" });
-  const kyc = snap.data()!;
-  const doc = kyc.documents?.[kind];
-
-  if (doc?.filename && kyc.applicationId) {
-    await deleteKycDocument(kyc.applicationId, doc.filename);
-  }
-  await ref.update({ [`documents.${kind}`]: FieldValue.delete() });
-
-  await writeAuditLog({
-    userId: req.user!.uid,
-    role: "employee",
-    action: "kyc.document_removed",
-    resource: "kycRecords",
-    resourceId: req.params.kycId,
-    description: `Employee removed the ${kind} document for KYC record ${req.params.kycId}.`,
-    ip: req.ip,
-  });
-
-  res.status(204).end();
-}));
-
-// Lets a teller re-capture a KYC document at the counter when the one on file
-// is missing (e.g. lost storage) or outdated — the customer is standing right
-// there, so this is the fastest way to restore identity verification.
-employeeRouter.post("/kyc/:kycId/document/:kind", kycUpload.single("file"), asyncHandler(async (req, res) => {
-  const kind = req.params.kind as DocumentKind;
-  if (!KYC_DOCUMENT_KINDS.includes(kind)) return res.status(400).json({ error: "Invalid document kind." });
-  if (!req.file) return res.status(400).json({ error: "No file uploaded." });
-
-  const ref = db.collection("kycRecords").doc(req.params.kycId);
-  const snap = await ref.get();
-  if (!snap.exists) return res.status(404).json({ error: "Not found" });
-  const kyc = snap.data()!;
-  if (!kyc.applicationId) return res.status(400).json({ error: "This KYC record has no linked application to store documents against." });
-
-  const saved = await saveKycDocument(kyc.applicationId, kind, req.file.buffer, req.file.mimetype);
-  await ref.update({ [`documents.${kind}`]: saved });
-
-  await writeAuditLog({
-    userId: req.user!.uid,
-    role: "employee",
-    action: "kyc.document_replaced",
-    resource: "kycRecords",
-    resourceId: req.params.kycId,
-    description: `Employee re-uploaded the ${kind} document for KYC record ${req.params.kycId}.`,
-    ip: req.ip,
-  });
-
-  res.status(204).end();
 }));
 
 const cashInSchema = z.object({

@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useState } from "react";
+import { FormEvent, useState } from "react";
 import { api } from "../../lib/api";
 import { Card, PageHeader, PrimaryButton, SecondaryButton, money } from "../../components/Shared";
 import { StatusPill } from "../../components/RiskChip";
@@ -17,21 +17,11 @@ export default function CashWithdrawal() {
   const [result, setResult] = useState<LookupResult | null>(null);
   const [images, setImages] = useState<Record<string, string>>({});
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
-  const [uploadingKind, setUploadingKind] = useState<DocKind | null>(null);
-  const [removingKind, setRemovingKind] = useState<DocKind | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<{ reference: string; amount: number; currency: string; newBalance: number } | null>(null);
-
-  function fetchDocument(kycId: string, kind: DocKind) {
-    api
-      .getBlobUrl(`/api/employee/kyc/${kycId}/document/${kind}`)
-      .then((url) => setImages((prev) => ({ ...prev, [kind]: url })))
-      .catch(() => setImageErrors((prev) => ({ ...prev, [kind]: true })));
-  }
 
   async function lookup(e: FormEvent) {
     e.preventDefault();
@@ -47,53 +37,18 @@ export default function CashWithdrawal() {
       setResult(data);
       if (data.kyc) {
         (["ownPhoto", "nidFront", "nidBack", "signature"] as const).forEach((kind) => {
-          if (data.kyc!.hasDocuments[kind]) fetchDocument(data.kyc!.id, kind);
+          if (data.kyc!.hasDocuments[kind]) {
+            api
+              .getBlobUrl(`/api/employee/kyc/${data.kyc!.id}/document/${kind}`)
+              .then((url) => setImages((prev) => ({ ...prev, [kind]: url })))
+              .catch(() => setImageErrors((prev) => ({ ...prev, [kind]: true })));
+          }
         });
       }
     } catch (err: any) {
       setLookupError(err.message ?? "Account not found.");
     } finally {
       setLooking(false);
-    }
-  }
-
-  async function uploadDocument(kind: DocKind, file: File) {
-    if (!result?.kyc) return;
-    const kycId = result.kyc.id;
-    setUploadError(null);
-    setUploadingKind(kind);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      await api.postForm(`/api/employee/kyc/${kycId}/document/${kind}`, form);
-      setImageErrors((prev) => ({ ...prev, [kind]: false }));
-      setResult((prev) => (prev && prev.kyc ? { ...prev, kyc: { ...prev.kyc, hasDocuments: { ...prev.kyc.hasDocuments, [kind]: true } } } : prev));
-      fetchDocument(kycId, kind);
-    } catch (err: any) {
-      setUploadError(err.message ?? "Upload failed.");
-    } finally {
-      setUploadingKind(null);
-    }
-  }
-
-  async function removeDocument(kind: DocKind) {
-    if (!result?.kyc) return;
-    const kycId = result.kyc.id;
-    setUploadError(null);
-    setRemovingKind(kind);
-    try {
-      await api.delete(`/api/employee/kyc/${kycId}/document/${kind}`);
-      setImages((prev) => {
-        const next = { ...prev };
-        delete next[kind];
-        return next;
-      });
-      setImageErrors((prev) => ({ ...prev, [kind]: false }));
-      setResult((prev) => (prev && prev.kyc ? { ...prev, kyc: { ...prev.kyc, hasDocuments: { ...prev.kyc.hasDocuments, [kind]: false } } } : prev));
-    } catch (err: any) {
-      setUploadError(err.message ?? "Remove failed.");
-    } finally {
-      setRemovingKind(null);
     }
   }
 
@@ -184,21 +139,11 @@ export default function CashWithdrawal() {
                   <div className="flex justify-between"><dt className="text-slate-500">KYC status</dt><dd><StatusPill status={result.kyc.status} /></dd></div>
                   <Row label="NID number" value={result.kyc.nidNumber} />
                 </dl>
-                {uploadError && <p className="mt-2 text-sm text-red-600">{uploadError}</p>}
                 <div className="mt-4 grid grid-cols-2 gap-3">
-                  {(["ownPhoto", "nidFront", "nidBack", "signature"] as const).map((kind) => (
-                    <DocPreview
-                      key={kind}
-                      label={kind === "ownPhoto" ? "Applicant photo" : kind === "nidFront" ? "NID front" : kind === "nidBack" ? "NID back" : "Signature"}
-                      src={images[kind]}
-                      available={result.kyc!.hasDocuments[kind]}
-                      failed={imageErrors[kind]}
-                      uploading={uploadingKind === kind}
-                      removing={removingKind === kind}
-                      onUpload={(file) => uploadDocument(kind, file)}
-                      onRemove={() => removeDocument(kind)}
-                    />
-                  ))}
+                  <DocPreview label="Applicant photo" src={images.ownPhoto} available={result.kyc.hasDocuments.ownPhoto} failed={imageErrors.ownPhoto} />
+                  <DocPreview label="NID front" src={images.nidFront} available={result.kyc.hasDocuments.nidFront} failed={imageErrors.nidFront} />
+                  <DocPreview label="NID back" src={images.nidBack} available={result.kyc.hasDocuments.nidBack} failed={imageErrors.nidBack} />
+                  <DocPreview label="Signature" src={images.signature} available={result.kyc.hasDocuments.signature} failed={imageErrors.signature} />
                 </div>
               </>
             ) : (
@@ -230,45 +175,14 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DocPreview({
-  label,
-  src,
-  available,
-  failed,
-  uploading,
-  removing,
-  onUpload,
-  onRemove,
-}: {
-  label: string;
-  src?: string;
-  available: boolean;
-  failed?: boolean;
-  uploading?: boolean;
-  removing?: boolean;
-  onUpload: (file: File) => void;
-  onRemove: () => void;
-}) {
-  const needsUpload = !available || failed;
-  const busy = uploading || removing;
-
-  function handleFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) onUpload(file);
-    e.target.value = "";
-  }
-
+function DocPreview({ label, src, available, failed }: { label: string; src?: string; available: boolean; failed?: boolean }) {
   return (
     <div>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-        {uploading ? (
-          <span className="text-xs text-slate-400">Uploading…</span>
-        ) : removing ? (
-          <span className="text-xs text-slate-400">Removing…</span>
+        {!available ? (
+          <span className="text-xs text-slate-400">Not on file</span>
         ) : src ? (
           <img src={src} alt={label} className="h-full w-full object-contain" />
-        ) : !available ? (
-          <span className="text-xs text-slate-400">Not on file</span>
         ) : failed ? (
           <span className="px-2 text-center text-xs text-red-500">Not available</span>
         ) : (
@@ -276,17 +190,6 @@ function DocPreview({
         )}
       </div>
       <p className="mt-1 text-center text-xs text-slate-500">{label}</p>
-      {!busy && needsUpload && (
-        <label className="mt-1 block cursor-pointer text-center text-xs font-semibold text-teal-700 hover:text-teal-800">
-          Upload
-          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} />
-        </label>
-      )}
-      {!busy && !needsUpload && src && (
-        <button type="button" onClick={onRemove} className="mt-1 block w-full text-center text-xs font-semibold text-red-600 hover:text-red-700">
-          Remove
-        </button>
-      )}
     </div>
   );
 }
