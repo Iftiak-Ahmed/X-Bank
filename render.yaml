@@ -23,13 +23,11 @@ services:
         value: "30000"
       - key: FIREBASE_WEB_API_KEY
         sync: false
-      - key: SMTP_HOST
+      - key: GMAIL_CLIENT_ID
         sync: false
-      - key: SMTP_PORT
+      - key: GMAIL_CLIENT_SECRET
         sync: false
-      - key: SMTP_USER
+      - key: GMAIL_REFRESH_TOKEN
         sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
+      - key: GMAIL_FROM
         sync: false

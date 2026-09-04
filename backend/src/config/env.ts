@@ -19,11 +19,13 @@ export const env = {
   highRiskLocations: (process.env.HIGH_RISK_LOCATIONS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
   monitoringIntervalMs: Number(process.env.MONITORING_INTERVAL_MS ?? 30000),
   firebaseWebApiKey: process.env.FIREBASE_WEB_API_KEY ?? "",
-  smtp: {
-    host: process.env.SMTP_HOST ?? "",
-    port: Number(process.env.SMTP_PORT ?? 587),
-    user: process.env.SMTP_USER ?? "",
-    pass: process.env.SMTP_PASS ?? "",
-    from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "",
+  // Gmail API (OAuth2, HTTPS) — used instead of raw SMTP because several hosts
+  // (Render's free tier included) block outbound SMTP ports entirely, silently
+  // timing out every send.
+  gmail: {
+    clientId: process.env.GMAIL_CLIENT_ID ?? "",
+    clientSecret: process.env.GMAIL_CLIENT_SECRET ?? "",
+    refreshToken: process.env.GMAIL_REFRESH_TOKEN ?? "",
+    from: process.env.GMAIL_FROM ?? "",
   },
 };

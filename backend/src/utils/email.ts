@@ -1,4 +1,3 @@
-import nodemailer, { Transporter } from "nodemailer";
 import { db, FieldValue } from "../config/firebase";
 import { env } from "../config/env";
 
@@ -13,37 +12,91 @@ interface EmailMessage {
   type: EmailType;
 }
 
-let transporter: Transporter | null = null;
+function isGmailConfigured(): boolean {
+  return Boolean(env.gmail.clientId && env.gmail.clientSecret && env.gmail.refreshToken);
+}
 
-function getTransporter(): Transporter | null {
-  if (!env.smtp.host || !env.smtp.user || !env.smtp.pass) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
-      secure: env.smtp.port === 465,
-      auth: { user: env.smtp.user, pass: env.smtp.pass },
-    });
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
+// Sends via the Gmail REST API over HTTPS (not SMTP) — several hosts, Render's
+// free tier included, block outbound SMTP ports entirely and every send just
+// times out. The API works anywhere plain HTTPS does.
+async function getAccessToken(): Promise<string> {
+  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 30_000) {
+    return cachedAccessToken.token;
   }
-  return transporter;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.gmail.clientId,
+      client_secret: env.gmail.clientSecret,
+      refresh_token: env.gmail.refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!res.ok) throw new Error(`Gmail token refresh failed: ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { access_token: string; expires_in: number };
+  cachedAccessToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+  return data.access_token;
+}
+
+function base64UrlEncode(input: string): string {
+  return Buffer.from(input, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function buildMimeMessage(from: string, to: string, subject: string, text: string, html: string): string {
+  const boundary = `xbank_${Date.now()}`;
+  const lines = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    text,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "",
+    html,
+    "",
+    `--${boundary}--`,
+  ];
+  return lines.join("\r\n");
+}
+
+async function sendViaGmail(to: string, subject: string, text: string, html: string): Promise<void> {
+  const accessToken = await getAccessToken();
+  const from = env.gmail.from || "me";
+  const raw = base64UrlEncode(buildMimeMessage(from, to, subject, text, html));
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw }),
+  });
+  if (!res.ok) throw new Error(`Gmail send failed: ${res.status} ${await res.text()}`);
 }
 
 /**
- * Sends real mail when SMTP credentials are configured; otherwise writes the
- * fully-rendered message to the emailOutbox collection so the send is still
- * visible and testable (Admin > Sent Emails) without needing credentials.
+ * Sends real mail when Gmail API credentials are configured; otherwise writes
+ * the fully-rendered message to the emailOutbox collection so the send is
+ * still visible and testable (Admin > Sent Emails) without needing credentials.
  */
 export async function sendEmail(message: EmailMessage): Promise<{ delivered: boolean }> {
-  const t = getTransporter();
+  const configured = isGmailConfigured();
   let delivered = false;
   let error: string | null = null;
 
-  if (t) {
+  if (configured) {
     try {
-      await t.sendMail({ from: env.smtp.from ?? env.smtp.user!, to: message.to, subject: message.subject, text: message.text, html: message.html });
+      await sendViaGmail(message.to, message.subject, message.text, message.html);
       delivered = true;
     } catch (err: any) {
-      error = err?.message ?? "Unknown SMTP error";
+      error = err?.message ?? "Unknown Gmail API error";
     }
   }
 
@@ -54,7 +107,7 @@ export async function sendEmail(message: EmailMessage): Promise<{ delivered: boo
     bodyHtml: message.html,
     relatedApplicationId: message.relatedApplicationId ?? null,
     type: message.type,
-    status: delivered ? "sent" : t ? "failed" : "simulated",
+    status: delivered ? "sent" : configured ? "failed" : "simulated",
     error,
     sentAt: FieldValue.serverTimestamp(),
   });
