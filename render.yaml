@@ -1,3 +1,5 @@
+# Deployed service: xbank-backend-mxt1 (https://xbank-backend-mxt1.onrender.com)
+# Render appended "-mxt1" on creation since "xbank-backend" alone was taken.
 services:
   - type: web
     name: xbank-backend

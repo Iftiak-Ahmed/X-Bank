@@ -3,6 +3,7 @@ dist/
 build/
 .env
 .env.*
+.firebase/
 *.log
 secrets/
 uploads/
