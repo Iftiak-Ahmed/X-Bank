@@ -103,12 +103,9 @@ const CASH_IN_TYPES = new Set(["cash_in", "deposit", "dps_deposit"]);
 const TRANSFER_TYPES = new Set(["transfer", "fund_transfer"]);
 const WITHDRAWAL_TYPES = new Set(["withdrawal", "cash_out"]);
 
-// Fixed 7-day window: 4 days back through 2 days ahead, with "today" always at
-// index 4 — the future days simply render with zero activity until it happens,
-// so the chart's shape (and where "today" sits on it) never shifts.
 adminRouter.get("/dashboard/transaction-activity", asyncHandler(async (_req, res) => {
-  const daysBack = 4;
-  const daysForward = 2;
+  const daysBack = 6;
+  const daysForward = 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const cutoff = new Date(today);

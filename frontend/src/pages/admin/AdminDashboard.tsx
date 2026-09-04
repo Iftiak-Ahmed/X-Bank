@@ -108,7 +108,7 @@ export default function AdminDashboard() {
 
       <Card className="mt-6 p-5">
         <h2 className="font-serif text-lg font-semibold text-navy-900">Transaction Activity</h2>
-        <p className="text-sm text-slate-500">Cash in, balance transfer, and withdrawal amounts — past 4 days, today, and the next 2 days.</p>
+        <p className="text-sm text-slate-500">Cash in, balance transfer, and withdrawal amounts, last 7 days.</p>
         <div className="mt-4 h-64">
           {!activity ? (
             <LoadingState />
