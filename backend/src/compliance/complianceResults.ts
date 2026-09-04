@@ -32,6 +32,11 @@ export async function generateComplianceResults(
   rulesSnap.docs.forEach((d) => linkedControlsByRule.set(d.id, d.data().linkedControlIds ?? []));
 
   const controlById = new Map(controlsSnap.docs.map((d) => [d.id, d.data()]));
+  // Most controls are never linked to any monitoring rule and so can never be
+  // evaluated for any transaction — writing a "not_applicable" row for those on
+  // every single transaction is pure noise that burns write/read quota for
+  // nothing. Only controls reachable from some rule are eligible for that row.
+  const eligibleControlIds = new Set<string>([...linkedControlsByRule.values()].flat());
   const evaluatedControlIds = new Set<string>();
   const batch = db.batch();
 
@@ -39,7 +44,7 @@ export async function generateComplianceResults(
     const controlIds = linkedControlsByRule.get(factor.ruleCode) ?? [];
     for (const controlId of controlIds) {
       const control = controlById.get(controlId);
-      if (!control) continue;
+      if (!control || control.status !== "active") continue;
       evaluatedControlIds.add(controlId);
 
       let result: ComplianceResultValue;
@@ -65,9 +70,10 @@ export async function generateComplianceResults(
   }
 
   // Controls with no rule evaluated at all for this transaction are explicitly
-  // not-applicable, rather than silently absent from the analysis.
+  // not-applicable, rather than silently absent from the analysis — but only
+  // for controls a rule could ever reach; the rest are skipped entirely.
   for (const [controlId, control] of controlById) {
-    if (evaluatedControlIds.has(controlId)) continue;
+    if (control.status !== "active" || evaluatedControlIds.has(controlId) || !eligibleControlIds.has(controlId)) continue;
     const ref = db.collection("complianceResults").doc();
     batch.set(ref, {
       transactionId,

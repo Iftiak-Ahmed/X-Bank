@@ -1,13 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
-import { useAuth } from "../../context/AuthContext";
 import { Card, LoadingState, PageHeader, PrimaryButton, SecondaryButton, money, formatDate } from "../../components/Shared";
 import { RiskChip, StatusPill } from "../../components/RiskChip";
 
 export default function AlertDetail() {
   const { id } = useParams();
-  const { profile } = useAuth();
   const [data, setData] = useState<any>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,7 +34,6 @@ export default function AlertDetail() {
 
   if (!data) return <LoadingState />;
   const { alert, transaction, investigations, evidence } = data;
-  const canClose = profile?.role === "compliance_manager";
 
   return (
     <div>
@@ -114,11 +111,9 @@ export default function AlertDetail() {
             <SecondaryButton disabled={busy} onClick={() => act("escalate")} className="w-full">Escalate</SecondaryButton>
             <SecondaryButton disabled={busy} onClick={() => act("false-positive")} className="w-full">Mark False Positive</SecondaryButton>
             <SecondaryButton disabled={busy} onClick={() => act("resolve")} className="w-full">Resolve</SecondaryButton>
-            {canClose && (
-              <PrimaryButton disabled={busy} onClick={() => act("close")} className="w-full bg-slate-700 hover:bg-slate-800">
-                Close Case
-              </PrimaryButton>
-            )}
+            <PrimaryButton disabled={busy} onClick={() => act("close")} className="w-full bg-slate-700 hover:bg-slate-800">
+              Close Case
+            </PrimaryButton>
           </div>
         </Card>
       </div>

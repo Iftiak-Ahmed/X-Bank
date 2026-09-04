@@ -20,9 +20,8 @@ export function initRealtime(httpServer: HttpServer): Server {
       const role = userDoc.exists ? userDoc.data()!.role : null;
 
       if (role === "compliance_officer") socket.join("officers");
-      if (role === "compliance_manager") socket.join("officers"), socket.join("managers");
       if (role === "admin") socket.join("managers");
-      if (!["compliance_officer", "compliance_manager", "admin"].includes(role)) {
+      if (!["compliance_officer", "admin"].includes(role)) {
         return socket.disconnect(true);
       }
     } catch {

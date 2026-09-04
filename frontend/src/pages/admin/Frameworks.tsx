@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import { Card, EmptyState, LoadingState, PageHeader, PrimaryButton } from "../../components/Shared";
+import { Card, EmptyState, LoadingState, PageHeader, PrimaryButton, Td, Th } from "../../components/Shared";
 
 export default function Frameworks() {
   const [frameworks, setFrameworks] = useState<any[]>([]);
@@ -9,6 +9,28 @@ export default function Frameworks() {
   const [controlForm, setControlForm] = useState({ frameworkId: "", controlId: "", name: "", requirement: "", category: "" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [controlsByFramework, setControlsByFramework] = useState<Record<string, any[]>>({});
+  const [loadingControls, setLoadingControls] = useState(false);
+
+  async function toggleFramework(frameworkId: string) {
+    if (expandedId === frameworkId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(frameworkId);
+    if (!controlsByFramework[frameworkId]) {
+      setLoadingControls(true);
+      try {
+        const controls = await api.get<any[]>(`/api/admin/controls?frameworkId=${frameworkId}`);
+        setControlsByFramework((prev) => ({ ...prev, [frameworkId]: controls }));
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoadingControls(false);
+      }
+    }
+  }
 
   function load() {
     api.get<any[]>("/api/admin/frameworks").then((f) => {
@@ -39,6 +61,10 @@ export default function Frameworks() {
       await api.post("/api/admin/controls", controlForm);
       setControlForm((c) => ({ ...c, controlId: "", name: "", requirement: "", category: "" }));
       setNotice("Control added.");
+      setControlsByFramework((prev) => {
+        const { [controlForm.frameworkId]: _stale, ...rest } = prev;
+        return rest;
+      });
     } catch (err: any) {
       setError(err.message);
     }
@@ -89,11 +115,53 @@ export default function Frameworks() {
           <ul className="divide-y divide-slate-100">
             {frameworks.map((f) => (
               <li key={f.id} className="px-5 py-4">
-                <div className="flex items-center justify-between">
+                <button type="button" onClick={() => toggleFramework(f.id)} className="flex w-full items-center justify-between text-left">
                   <span className="font-semibold text-navy-900">{f.name}</span>
-                  <span className="text-xs text-slate-400">v{f.version} · {f.source}</span>
-                </div>
+                  <span className="flex items-center gap-2 text-xs text-slate-400">
+                    v{f.version} · {f.source}
+                    <span className="text-teal-700">{expandedId === f.id ? "Hide controls ▲" : "Show controls ▼"}</span>
+                  </span>
+                </button>
                 {f.description && <p className="mt-1 text-sm text-slate-500">{f.description}</p>}
+
+                {expandedId === f.id && (
+                  <div className="mt-3 overflow-hidden rounded-lg border border-slate-100">
+                    {loadingControls && !controlsByFramework[f.id] ? (
+                      <LoadingState />
+                    ) : (controlsByFramework[f.id]?.length ?? 0) === 0 ? (
+                      <EmptyState message="No controls in this framework yet." />
+                    ) : (
+                      <table className="w-full table-fixed">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50">
+                            <Th className="w-24">Control ID</Th>
+                            <Th className="w-1/4">Name</Th>
+                            <Th className="w-28">Category</Th>
+                            <Th>Description</Th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {controlsByFramework[f.id].map((c) => (
+                            <tr key={c.id}>
+                              <Td className="align-top py-4 font-mono text-xs">
+                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.controlId}</div>
+                              </Td>
+                              <Td className="align-top py-4 font-medium text-navy-900">
+                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.name}</div>
+                              </Td>
+                              <Td className="align-top py-4 text-xs text-slate-500">
+                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.category}</div>
+                              </Td>
+                              <Td className="align-top py-4 text-sm leading-relaxed text-slate-500">
+                                <div style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{c.requirement}</div>
+                              </Td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

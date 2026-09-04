@@ -8,7 +8,7 @@ import { emitAlertUpdated } from "../realtime/socket";
 import { asyncHandler } from "../utils/asyncHandler";
 
 export const complianceRouter = Router();
-complianceRouter.use(requireAuth, requireRole("compliance_officer", "compliance_manager"));
+complianceRouter.use(requireAuth, requireRole("compliance_officer"));
 
 complianceRouter.get("/dashboard/kpis", asyncHandler(async (_req, res) => {
   const [customers, transactions, alertsOpen, alertsCritical, kycIssues] = await Promise.all([
@@ -57,9 +57,21 @@ complianceRouter.get("/transactions/:id", asyncHandler(async (req, res) => {
     : [];
   const controlById = new Map(controlDocs.map((d) => [d.id, d.data()]));
 
+  const frameworkIds = [...new Set(controlDocs.map((d) => d.data()?.frameworkId).filter(Boolean))];
+  const frameworkDocs = frameworkIds.length
+    ? await db.getAll(...frameworkIds.map((id: string) => db.collection("complianceFrameworks").doc(id)))
+    : [];
+  const frameworkById = new Map(frameworkDocs.map((d) => [d.id, d.data()]));
+
   const complianceAnalysis = resultsSnap.docs.map((d) => {
     const r = d.data();
-    return { id: d.id, ...r, control: controlById.get(r.controlId) ?? null };
+    const control = controlById.get(r.controlId) ?? null;
+    const framework = control ? frameworkById.get(control.frameworkId) ?? null : null;
+    return {
+      id: d.id,
+      ...r,
+      control: control ? { ...control, frameworkName: framework?.name ?? null } : null,
+    };
   });
   const summary = { pass: 0, fail: 0, needs_review: 0, not_applicable: 0 };
   complianceAnalysis.forEach((r: any) => { if (r.result in summary) summary[r.result as keyof typeof summary]++; });
@@ -163,7 +175,7 @@ complianceRouter.post("/alerts/:id/resolve", asyncHandler(async (req, res) => {
   await updateAlert(req, res, { status: "resolved" }, "resolved", req.body.note ?? "Resolved.");
 }));
 
-complianceRouter.post("/alerts/:id/close", requireRole("compliance_manager"), asyncHandler(async (req, res) => {
+complianceRouter.post("/alerts/:id/close", asyncHandler(async (req, res) => {
   await updateAlert(req, res, { status: "closed" }, "closed", req.body.note ?? "Case closed.");
 }));
 
@@ -276,24 +288,94 @@ complianceRouter.get("/frameworks", asyncHandler(async (_req, res) => {
 }));
 
 complianceRouter.get("/frameworks/:id", asyncHandler(async (req, res) => {
-  const [fwSnap, controlsSnap] = await Promise.all([
+  const [fwSnap, controlsSnap, resultsSnap] = await Promise.all([
     db.collection("complianceFrameworks").doc(req.params.id).get(),
     db.collection("complianceControls").where("frameworkId", "==", req.params.id).get(),
+    // One query for the whole framework instead of one per control (was N+1).
+    db.collection("complianceResults").where("frameworkId", "==", req.params.id).get(),
   ]);
   if (!fwSnap.exists) return res.status(404).json({ error: "Not found" });
 
-  const controls = await Promise.all(
-    controlsSnap.docs.map(async (c) => {
-      const resultsSnap = await db.collection("complianceResults").where("controlId", "==", c.id).get();
-      const counts = { pass: 0, fail: 0, needs_review: 0, not_applicable: 0 };
-      resultsSnap.docs.forEach((r) => { const v = r.data().result; if (v in counts) (counts as any)[v]++; });
-      return { id: c.id, ...c.data(), resultCounts: counts };
-    })
-  );
+  const countsByControl = new Map<string, { pass: number; fail: number; needs_review: number; not_applicable: number }>();
+  resultsSnap.docs.forEach((r) => {
+    const data = r.data();
+    const counts = countsByControl.get(data.controlId) ?? { pass: 0, fail: 0, needs_review: 0, not_applicable: 0 };
+    if (data.result in counts) (counts as any)[data.result]++;
+    countsByControl.set(data.controlId, counts);
+  });
+
+  const controls = controlsSnap.docs.map((c) => ({
+    id: c.id,
+    ...c.data(),
+    resultCounts: countsByControl.get(c.id) ?? { pass: 0, fail: 0, needs_review: 0, not_applicable: 0 },
+  }));
 
   const mostViolated = [...controls].sort((a, b) => b.resultCounts.fail - a.resultCounts.fail).slice(0, 5);
 
   res.json({ framework: { id: fwSnap.id, ...fwSnap.data() }, controls, mostViolated });
+}));
+
+const complianceFrameworkSchema = z.object({
+  name: z.string().min(2),
+  version: z.string().min(1),
+  source: z.string().optional(),
+  description: z.string().optional(),
+});
+
+complianceRouter.post("/frameworks", asyncHandler(async (req, res) => {
+  const parsed = complianceFrameworkSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
+  const ref = await db.collection("complianceFrameworks").add({ ...parsed.data, createdAt: FieldValue.serverTimestamp() });
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: req.user!.role,
+    action: "framework.created",
+    resource: "complianceFrameworks",
+    resourceId: ref.id,
+    description: `${req.user!.email} added framework ${parsed.data.name} v${parsed.data.version}.`,
+    ip: req.ip,
+  });
+  res.status(201).json({ id: ref.id });
+}));
+
+const complianceControlSchema = z.object({
+  frameworkId: z.string(),
+  controlId: z.string().min(1),
+  name: z.string().min(2),
+  requirement: z.string().min(2),
+  category: z.string().optional(),
+  source: z.string().optional(),
+  version: z.string().optional(),
+});
+
+// Accepts either one control or a bulk array under `controls`, so an entire
+// uploaded framework's control set can be imported in one call.
+complianceRouter.post("/controls", asyncHandler(async (req, res) => {
+  const bulk = z.array(complianceControlSchema).safeParse(req.body.controls);
+  const single = complianceControlSchema.safeParse(req.body);
+  const items = bulk.success ? bulk.data : single.success ? [single.data] : null;
+  if (!items) return res.status(400).json({ error: "Invalid control payload." });
+
+  const batch = db.batch();
+  const ids: string[] = [];
+  for (const item of items) {
+    const ref = db.collection("complianceControls").doc();
+    ids.push(ref.id);
+    batch.set(ref, { ...item, status: "active", evidenceCount: 0, lastChecked: FieldValue.serverTimestamp(), createdAt: FieldValue.serverTimestamp() });
+  }
+  await batch.commit();
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: req.user!.role,
+    action: "control.created",
+    resource: "complianceControls",
+    description: `${req.user!.email} imported ${items.length} control(s).`,
+    newValue: { count: items.length },
+    ip: req.ip,
+  });
+
+  res.status(201).json({ ids });
 }));
 
 complianceRouter.get("/controls/:id", asyncHandler(async (req, res) => {
@@ -321,6 +403,34 @@ complianceRouter.get("/controls/:id", asyncHandler(async (req, res) => {
     violatingTransactionIds,
     relatedAlerts: relatedAlertsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
   });
+}));
+
+const controlStatusSchema = z.object({ status: z.enum(["active", "inactive"]) });
+
+complianceRouter.patch("/controls/:id/status", asyncHandler(async (req, res) => {
+  const parsed = controlStatusSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
+
+  const ref = db.collection("complianceControls").doc(req.params.id);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: "Not found" });
+  const control = snap.data()!;
+
+  await ref.update({ status: parsed.data.status, updatedAt: FieldValue.serverTimestamp() });
+
+  await writeAuditLog({
+    userId: req.user!.uid,
+    role: req.user!.role,
+    action: "control.status_changed",
+    resource: "complianceControls",
+    resourceId: req.params.id,
+    description: `${req.user!.email} set control ${control.controlId} (${control.name}) to ${parsed.data.status}.`,
+    previousValue: { status: control.status },
+    newValue: { status: parsed.data.status },
+    ip: req.ip,
+  });
+
+  res.json({ id: req.params.id, status: parsed.data.status });
 }));
 
 complianceRouter.get("/matrix", asyncHandler(async (req, res) => {

@@ -4,13 +4,17 @@ import { Card, EmptyState, LoadingState, PageHeader, PrimaryButton, Td, Th } fro
 import { StatusPill } from "../../components/RiskChip";
 import { useAuth } from "../../context/AuthContext";
 
-const ROLES = ["employee", "compliance_officer", "compliance_manager", "admin"];
+const ROLES = ["employee", "compliance_officer", "admin"];
+
+const ROLE_LABELS: Record<string, string> = {
+  client: "Customer",
+  employee: "Banking Executive",
+  compliance_officer: "Compliance Officer",
+  admin: "System Administrator",
+};
 
 function roleLabel(role: string): string {
-  return role
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  return ROLE_LABELS[role] ?? role;
 }
 
 export default function Users() {
@@ -18,9 +22,10 @@ export default function Users() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ fullName: "", email: "", role: "employee", department: "", branch: "" });
+  const [form, setForm] = useState({ fullName: "", email: "", role: "employee", department: "", branch: "", userId: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ userId: string; tempPassword: string; emailDelivered: boolean } | null>(null);
+  const isBankingExecutive = form.role === "employee";
 
   function load() {
     api.get<any[]>("/api/admin/users").then((u) => {
@@ -35,9 +40,11 @@ export default function Users() {
     setError(null);
     setCreated(null);
     try {
-      const result = await api.post<{ userId: string; tempPassword: string; emailDelivered: boolean }>("/api/admin/users", form);
+      const { userId, password, ...rest } = form;
+      const payload = isBankingExecutive ? { ...rest, userId, password } : rest;
+      const result = await api.post<{ userId: string; tempPassword: string; emailDelivered: boolean }>("/api/admin/users", payload);
       setCreated(result);
-      setForm({ fullName: "", email: "", role: "employee", department: "", branch: "" });
+      setForm({ fullName: "", email: "", role: "employee", department: "", branch: "", userId: "", password: "" });
       load();
     } catch (err: any) {
       setError(err.message ?? "Failed to create user.");
@@ -85,7 +92,7 @@ export default function Users() {
 
   return (
     <div>
-      <PageHeader title="User Management" subtitle="Create and manage staff accounts. Credentials are generated automatically." />
+      <PageHeader title="User Management" subtitle="Create and manage staff accounts. Credentials are generated automatically, except Banking Executive." />
 
       <Card className="mb-6 p-5">
         <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">New staff account</h2>
@@ -97,12 +104,21 @@ export default function Users() {
           </select>
           <input placeholder="Department (optional)" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input placeholder="Branch (optional)" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          {isBankingExecutive && (
+            <>
+              <input required placeholder="User ID" value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
+              <input required type="text" placeholder="Password (min 8 characters)" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
+            </>
+          )}
           <PrimaryButton type="submit">Create</PrimaryButton>
         </form>
+        {isBankingExecutive && (
+          <p className="mt-2 text-xs text-slate-400">Banking Executive accounts use a User ID and password you set here, instead of auto-generated ones.</p>
+        )}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         {created && (
           <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800">
-            Credentials generated — User ID <span className="font-mono font-semibold">{created.userId}</span>, temp password{" "}
+            Credentials — User ID <span className="font-mono font-semibold">{created.userId}</span>, temp password{" "}
             <span className="font-mono font-semibold">{created.tempPassword}</span>.{" "}
             {created.emailDelivered ? "Emailed to the staff member." : "Also saved to the email outbox (no SMTP configured)."}
           </div>
@@ -135,7 +151,7 @@ export default function Users() {
                       return currentAccounts.map((a: any) => a.accountNumber).join(", ");
                     })()}
                   </Td>
-                  <Td className="capitalize">{u.role?.replace("_", " ")}</Td>
+                  <Td>{roleLabel(u.role)}</Td>
                   <Td className="space-x-1.5">
                     <StatusPill status={u.status} />
                     {u.locked && <StatusPill status="locked" />}

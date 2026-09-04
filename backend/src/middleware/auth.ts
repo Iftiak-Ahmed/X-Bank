@@ -26,8 +26,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return res.status(401).json({ error: "Missing bearer token" });
   }
 
+  let decoded;
   try {
-    const decoded = await auth.verifyIdToken(token);
+    decoded = await auth.verifyIdToken(token);
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+
+  // A failure past this point is our own database, not the caller's credentials —
+  // reporting it as "invalid token" would send the client on a pointless re-login.
+  try {
     const userDoc = await db.collection("users").doc(decoded.uid).get();
     if (!userDoc.exists) {
       return res.status(401).json({ error: "User record not found" });
@@ -45,6 +53,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     };
     next();
   } catch (err) {
-    res.status(401).json({ error: "Invalid or expired token" });
+    console.error("requireAuth: failed to load user record", err);
+    res.status(503).json({ error: "Service temporarily unavailable. Please try again shortly." });
   }
 }

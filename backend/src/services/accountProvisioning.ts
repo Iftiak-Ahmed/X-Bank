@@ -76,6 +76,7 @@ export async function provisionClientFromApplication(
     customerId: customerRef.id,
     applicationId,
     nidNumber: application.nidNumber,
+    docType: application.docType ?? "nid",
     status: "verified",
     documents: application.documents ?? null,
     submittedAt: application.createdAt ?? FieldValue.serverTimestamp(),

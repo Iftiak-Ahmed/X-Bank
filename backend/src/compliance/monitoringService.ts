@@ -156,7 +156,7 @@ export async function runComplianceCheck(transactionId: string): Promise<{
 
     const officersSnap = await db
       .collection("users")
-      .where("role", "in", ["compliance_officer", "compliance_manager"])
+      .where("role", "==", "compliance_officer")
       .where("status", "==", "active")
       .get();
     await Promise.all(

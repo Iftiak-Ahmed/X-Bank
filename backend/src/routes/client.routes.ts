@@ -7,6 +7,7 @@ import { generateAccountNumber, generateReference } from "../utils/ids";
 import { generateUniqueAccountNumber } from "../utils/unique";
 import { writeAuditLog } from "../utils/audit";
 import { runComplianceCheck } from "../compliance/monitoringService";
+import { checkTransactionRules, recordTransactionRuleAlert } from "../compliance/transactionRuleEngine";
 import { asyncHandler } from "../utils/asyncHandler";
 import { calculateDpsMaturity, DPS_ALLOWED_TERM_YEARS, DPS_PROFIT_RATE_PERCENT } from "../utils/dps";
 
@@ -118,6 +119,14 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
   if (receiverSnap.empty) return res.status(404).json({ error: "Beneficiary account not found." });
   const receiverDoc = receiverSnap.docs[0];
 
+  const customerSnap = await db.collection("customers").doc(customerId).get();
+  const customerType = customerSnap.exists ? customerSnap.data()!.customerType ?? "individual" : "individual";
+  const violations = await checkTransactionRules({ accountId: senderAccountId, transactionType: "transfer", amount, customerType });
+  const blocking = violations.find((v) => v.violationAction === "block");
+  if (blocking) {
+    return res.status(403).json({ error: `Blocked by transaction rule "${blocking.ruleName}": ${blocking.reason}` });
+  }
+
   const txRef = db.collection("transactions").doc();
   await db.runTransaction(async (t) => {
     const freshSender = await t.get(senderRef);
@@ -158,6 +167,9 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
+  const nonBlockingViolations = violations.filter((v) => v.violationAction !== "block");
+  if (nonBlockingViolations.length) await recordTransactionRuleAlert(txRef.id, customerId, nonBlockingViolations);
+
   const result = await runComplianceCheck(txRef.id);
   const finalSnap = await txRef.get();
 
@@ -177,6 +189,12 @@ clientRouter.post("/transactions/deposit", asyncHandler(async (req, res) => {
   const accountSnap = await accountRef.get();
   if (!accountSnap.exists || accountSnap.data()!.customerId !== customerId) {
     return res.status(403).json({ error: "Not your account." });
+  }
+
+  const depositViolations = await checkTransactionRules({ accountId, transactionType: "deposit", amount });
+  const depositBlocking = depositViolations.find((v) => v.violationAction === "block");
+  if (depositBlocking) {
+    return res.status(403).json({ error: `Blocked by transaction rule "${depositBlocking.ruleName}": ${depositBlocking.reason}` });
   }
 
   const txRef = db.collection("transactions").doc();
@@ -211,6 +229,9 @@ clientRouter.post("/transactions/deposit", asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
+  const depositNonBlocking = depositViolations.filter((v) => v.violationAction !== "block");
+  if (depositNonBlocking.length) await recordTransactionRuleAlert(txRef.id, customerId, depositNonBlocking);
+
   res.status(201).json({ id: txRef.id });
 }));
 
@@ -228,6 +249,12 @@ clientRouter.post("/transactions/withdraw", asyncHandler(async (req, res) => {
   }
   if (Number(accountSnap.data()!.balance) < amount) {
     return res.status(400).json({ error: "Insufficient balance." });
+  }
+
+  const withdrawViolations = await checkTransactionRules({ accountId, transactionType: "withdrawal", amount });
+  const withdrawBlocking = withdrawViolations.find((v) => v.violationAction === "block");
+  if (withdrawBlocking) {
+    return res.status(403).json({ error: `Blocked by transaction rule "${withdrawBlocking.ruleName}": ${withdrawBlocking.reason}` });
   }
 
   const txRef = db.collection("transactions").doc();
@@ -261,6 +288,9 @@ clientRouter.post("/transactions/withdraw", asyncHandler(async (req, res) => {
     description: `Simulated withdrawal of ${amount} BDT.`,
     ip: req.ip,
   });
+
+  const withdrawNonBlocking = withdrawViolations.filter((v) => v.violationAction !== "block");
+  if (withdrawNonBlocking.length) await recordTransactionRuleAlert(txRef.id, customerId, withdrawNonBlocking);
 
   res.status(201).json({ id: txRef.id });
 }));

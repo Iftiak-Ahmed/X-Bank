@@ -40,10 +40,10 @@ import Reports from "./pages/compliance/Reports";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import Users from "./pages/admin/Users";
 import Rules from "./pages/admin/Rules";
+import TransactionRules from "./pages/admin/TransactionRules";
 import Applications from "./pages/admin/Applications";
 import ApplicationDetail from "./pages/admin/ApplicationDetail";
 import AdminFrameworks from "./pages/admin/Frameworks";
-import EmailOutbox from "./pages/admin/EmailOutbox";
 import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
 import StaffProfile from "./pages/shared/StaffProfile";
 
@@ -76,11 +76,11 @@ const COMPLIANCE_NAV = [
 
 const ADMIN_NAV = [
   { label: "Dashboard", to: "/admin/dashboard" },
-  { label: "Client Applications", to: "/admin/applications" },
+  { label: "Customer Applications", to: "/admin/applications" },
   { label: "Users", to: "/admin/users" },
   { label: "Compliance Rules", to: "/admin/rules" },
+  { label: "Transaction Rules", to: "/admin/transaction-rules" },
   { label: "Frameworks", to: "/admin/frameworks" },
-  { label: "Sent Emails", to: "/admin/emails" },
   { label: "Audit Logs", to: "/admin/audit-logs" },
 ];
 
@@ -105,7 +105,7 @@ export default function App() {
           <Route
             element={
               <ProtectedRoute roles={["client"]}>
-                <AppShell navItems={CLIENT_NAV} roleLabel="Client" badgeColor="bg-slate-700 text-slate-100" profilePath="/profile" />
+                <AppShell navItems={CLIENT_NAV} roleLabel="Customer" badgeColor="bg-slate-700 text-slate-100" profilePath="/profile" />
               </ProtectedRoute>
             }
           >
@@ -121,7 +121,7 @@ export default function App() {
           <Route
             element={
               <ProtectedRoute roles={["employee"]}>
-                <AppShell navItems={EMPLOYEE_NAV} roleLabel="Employee" badgeColor="bg-navy-800 text-navy-100" profilePath="/employee/profile" />
+                <AppShell navItems={EMPLOYEE_NAV} roleLabel="Banking Executive" badgeColor="bg-navy-800 text-navy-100" profilePath="/employee/profile" />
               </ProtectedRoute>
             }
           >
@@ -135,8 +135,8 @@ export default function App() {
 
           <Route
             element={
-              <ProtectedRoute roles={["compliance_officer", "compliance_manager"]}>
-                <AppShell navItems={COMPLIANCE_NAV} roleLabel="Compliance" badgeColor="bg-teal-600 text-teal-50" profilePath="/compliance/profile" />
+              <ProtectedRoute roles={["compliance_officer"]}>
+                <AppShell navItems={COMPLIANCE_NAV} roleLabel="Compliance Officer" badgeColor="bg-teal-600 text-teal-50" profilePath="/compliance/profile" />
               </ProtectedRoute>
             }
           >
@@ -159,7 +159,7 @@ export default function App() {
           <Route
             element={
               <ProtectedRoute roles={["admin"]}>
-                <AppShell navItems={ADMIN_NAV} roleLabel="Admin" badgeColor="bg-[#6a4c93] text-purple-50" profilePath="/admin/profile" />
+                <AppShell navItems={ADMIN_NAV} roleLabel="System Administrator" badgeColor="bg-[#6a4c93] text-purple-50" profilePath="/admin/profile" />
               </ProtectedRoute>
             }
           >
@@ -168,8 +168,8 @@ export default function App() {
             <Route path="/admin/applications/:id" element={<ApplicationDetail />} />
             <Route path="/admin/users" element={<Users />} />
             <Route path="/admin/rules" element={<Rules />} />
+            <Route path="/admin/transaction-rules" element={<TransactionRules />} />
             <Route path="/admin/frameworks" element={<AdminFrameworks />} />
-            <Route path="/admin/emails" element={<EmailOutbox />} />
             <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
             <Route path="/admin/profile" element={<StaffProfile />} />
           </Route>

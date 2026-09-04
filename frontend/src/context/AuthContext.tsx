@@ -3,7 +3,7 @@ import { onAuthStateChanged, signInWithCustomToken, signOut, User } from "fireba
 import { firebaseAuth, authReady } from "../lib/firebase";
 import { api } from "../lib/api";
 
-export type Role = "client" | "employee" | "compliance_officer" | "compliance_manager" | "admin";
+export type Role = "client" | "employee" | "compliance_officer" | "admin";
 export type LoginRoleOption = "client" | "employee" | "compliance" | "admin";
 
 interface Profile {
@@ -129,7 +129,6 @@ export function dashboardPathForRole(role: Role): string {
     case "employee":
       return "/employee/dashboard";
     case "compliance_officer":
-    case "compliance_manager":
       return "/compliance/dashboard";
     case "admin":
       return "/admin/dashboard";

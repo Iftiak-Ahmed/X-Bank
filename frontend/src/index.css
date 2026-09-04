@@ -10,3 +10,9 @@ body {
 * {
   font-variant-numeric: tabular-nums;
 }
+
+/* The native datalist dropdown arrow renders solid black by default; lighten it
+   to match the form's muted, light aesthetic. */
+.nationality-input::-webkit-calendar-picker-indicator {
+  opacity: 0.35;
+}

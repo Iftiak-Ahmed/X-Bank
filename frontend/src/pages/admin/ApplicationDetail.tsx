@@ -97,7 +97,7 @@ export default function ApplicationDetail() {
             <Row label="Address" value={app.address} />
             <Row label="Occupation" value={app.occupation} />
             <Row label="Nationality" value={app.nationality} />
-            <Row label="NID number" value={app.nidNumber} />
+            <Row label={app.docType === "passport" ? "Passport number" : "NID number"} value={app.nidNumber} />
             <Row label="Submitted" value={formatDate(app.createdAt)} />
           </dl>
           {app.reviewRemarks && (
@@ -111,8 +111,8 @@ export default function ApplicationDetail() {
           <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">KYC documents</h2>
           <div className="mt-3 grid grid-cols-2 gap-3">
             <DocPreview label="Applicant photo" src={images.ownPhoto} />
-            <DocPreview label="NID front" src={images.nidFront} />
-            <DocPreview label="NID back" src={images.nidBack} />
+            <DocPreview label={app.docType === "passport" ? "Passport photo" : "NID front"} src={images.nidFront} />
+            {app.docType !== "passport" && <DocPreview label="NID back" src={images.nidBack} />}
             <DocPreview label="Signature" src={images.signature} />
           </div>
 

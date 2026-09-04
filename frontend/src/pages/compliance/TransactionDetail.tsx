@@ -132,30 +132,78 @@ function ComplianceAnalysis({ analysis, summary }: { analysis: any[]; summary: R
     );
   }
 
+  // "Not applicable" just means no rule tied to that control ran for this transaction —
+  // it's noise here, not a finding. Only controls that were actually evaluated matter.
+  const evaluated = analysis.filter((r) => r.result !== "not_applicable");
+  if (evaluated.length === 0) {
+    return (
+      <Card className="mb-6 p-5">
+        <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">Compliance analysis by framework</h2>
+        <p className="mt-2 text-sm text-slate-400">No monitoring rule fired for this transaction, so no framework controls were evaluated.</p>
+      </Card>
+    );
+  }
+
+  const byFramework = new Map<string, any[]>();
+  for (const r of evaluated) {
+    const key = r.control?.frameworkName ?? "Unmapped";
+    byFramework.set(key, [...(byFramework.get(key) ?? []), r]);
+  }
+  const resultOrder: Record<string, number> = { fail: 0, needs_review: 1, pass: 2 };
+  for (const items of byFramework.values()) {
+    items.sort((a, b) => (resultOrder[a.result] ?? 3) - (resultOrder[b.result] ?? 3));
+  }
+  // Frameworks with a violation first, so the officer sees what needs attention immediately.
+  const frameworkNames = [...byFramework.keys()].sort((a, b) => {
+    const failA = byFramework.get(a)!.some((r) => r.result === "fail");
+    const failB = byFramework.get(b)!.some((r) => r.result === "fail");
+    return failA === failB ? a.localeCompare(b) : failA ? -1 : 1;
+  });
+
   return (
     <Card className="mb-6 p-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">Compliance analysis</h2>
+        <h2 className="font-serif text-sm font-semibold uppercase tracking-wide text-slate-400">Compliance analysis by framework</h2>
         <div className="flex gap-3 text-xs">
           {Object.entries(summary ?? {}).map(([k, v]) => (
             <span key={k} className={`rounded-full px-2 py-0.5 font-semibold ${RESULT_CLASS[k]}`}>{RESULT_LABEL[k]} {v}</span>
           ))}
         </div>
       </div>
-      <div className="mt-3 space-y-2">
-        {analysis.map((r: any) => (
-          <div key={r.id} className={`rounded-lg border px-3 py-2 text-sm ${r.result === "fail" ? "border-red-200 bg-red-50" : "border-slate-100"}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-mono text-xs text-slate-400">{r.control?.controlId}</span>{" "}
-                <span className="font-semibold text-navy-900">{r.control?.name}</span>
+
+      <div className="mt-4 space-y-5">
+        {frameworkNames.map((framework) => {
+          const items = byFramework.get(framework)!;
+          const violatedCount = items.filter((r) => r.result === "fail").length;
+          return (
+            <div key={framework}>
+              <div className="flex items-center gap-2">
+                <h3 className="font-serif text-sm font-semibold text-navy-900">{framework}</h3>
+                {violatedCount > 0 ? (
+                  <span className="rounded-full bg-risk-criticalBg px-2 py-0.5 text-xs font-semibold text-risk-critical">{violatedCount} violated</span>
+                ) : (
+                  <span className="rounded-full bg-risk-lowBg px-2 py-0.5 text-xs font-semibold text-risk-low">No violations</span>
+                )}
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RESULT_CLASS[r.result]}`}>{RESULT_LABEL[r.result]}</span>
+              <div className="mt-2 space-y-2">
+                {items.map((r: any) => (
+                  <div key={r.id} className={`rounded-lg border px-3 py-2 text-sm ${r.result === "fail" ? "border-red-200 bg-red-50" : "border-slate-100"}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        {r.ruleCode && <span className="mr-2 rounded-full bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-600">{r.ruleCode}</span>}
+                        <span className="font-mono text-xs text-slate-400">{r.control?.controlId}</span>{" "}
+                        <span className="font-semibold text-navy-900">{r.control?.name}</span>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${RESULT_CLASS[r.result]}`}>{RESULT_LABEL[r.result]}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{r.reason}</p>
+                    {r.control?.requirement && <p className="mt-1 text-xs italic text-slate-400">Requirement: {r.control.requirement}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
-            <p className="mt-1 text-xs text-slate-500">{r.reason}</p>
-            {r.control?.requirement && <p className="mt-1 text-xs italic text-slate-400">Requirement: {r.control.requirement}</p>}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Card>
   );

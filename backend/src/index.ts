@@ -31,6 +31,11 @@ app.use("/api/notifications", notificationsRouter);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
+  // gRPC code 8 = RESOURCE_EXHAUSTED — Firestore quota exceeded, not a bug in this
+  // request; say so plainly instead of a generic "Internal server error".
+  if (err?.code === 8 || /quota exceeded/i.test(err?.details ?? err?.message ?? "")) {
+    return res.status(503).json({ error: "Database quota exceeded. Please try again shortly, or upgrade the Firebase plan." });
+  }
   res.status(500).json({ error: "Internal server error" });
 });
 

@@ -30,6 +30,9 @@ const applicationSchema = z.object({
   occupation: z.string().min(2),
   nationality: z.string().min(2),
   nidNumber: z.string().min(5),
+  // Foreign nationals submit a passport instead of an NID — a single photo,
+  // no back side. Defaults to "nid" for older clients that don't send it.
+  docType: z.enum(["nid", "passport"]).optional().default("nid"),
 });
 
 publicRouter.post(
@@ -52,8 +55,13 @@ publicRouter.post(
     const nidBack = files?.nidBack?.[0];
     const signature = files?.signature?.[0];
     const ownPhoto = files?.ownPhoto?.[0];
-    if (!nidFront || !nidBack || !signature || !ownPhoto) {
-      return res.status(400).json({ error: "Your photo, NID front, NID back, and signature images are all required." });
+    const isPassport = parsed.data.docType === "passport";
+    if (!nidFront || !signature || !ownPhoto || (!isPassport && !nidBack)) {
+      return res.status(400).json({
+        error: isPassport
+          ? "Your photo, passport photo, and signature images are all required."
+          : "Your photo, NID front, NID back, and signature images are all required.",
+      });
     }
 
     const existingUser = await auth.getUserByEmail(parsed.data.email).catch(() => null);
@@ -71,12 +79,14 @@ publicRouter.post(
     }
 
     const applicationId = generateApplicationId();
-    const documents = {
+    const documents: Record<string, { filename: string; hash: string; mimeType: string }> = {
       nidFront: { filename: saveKycDocument(applicationId, "nidFront", nidFront.buffer, nidFront.mimetype), hash: hashBuffer(nidFront.buffer), mimeType: nidFront.mimetype },
-      nidBack: { filename: saveKycDocument(applicationId, "nidBack", nidBack.buffer, nidBack.mimetype), hash: hashBuffer(nidBack.buffer), mimeType: nidBack.mimetype },
       signature: { filename: saveKycDocument(applicationId, "signature", signature.buffer, signature.mimetype), hash: hashBuffer(signature.buffer), mimeType: signature.mimetype },
       ownPhoto: { filename: saveKycDocument(applicationId, "ownPhoto", ownPhoto.buffer, ownPhoto.mimetype), hash: hashBuffer(ownPhoto.buffer), mimeType: ownPhoto.mimetype },
     };
+    if (nidBack) {
+      documents.nidBack = { filename: saveKycDocument(applicationId, "nidBack", nidBack.buffer, nidBack.mimetype), hash: hashBuffer(nidBack.buffer), mimeType: nidBack.mimetype };
+    }
 
     await db
       .collection("clientApplications")

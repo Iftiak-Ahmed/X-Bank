@@ -4,10 +4,10 @@ import { api } from "../../lib/api";
 import { Logo } from "../../components/Logo";
 
 const ROLE_OPTIONS = [
-  { value: "client", label: "Client" },
-  { value: "employee", label: "Employee" },
+  { value: "client", label: "Customer" },
+  { value: "employee", label: "Banking Executive" },
   { value: "compliance", label: "Compliance Officer" },
-  { value: "admin", label: "Admin" },
+  { value: "admin", label: "System Administrator" },
 ];
 
 export default function ForgotPassword() {

@@ -20,7 +20,7 @@ export default function Applications() {
 
   return (
     <div>
-      <PageHeader title="Client Applications" subtitle="New account applications awaiting KYC review." />
+      <PageHeader title="Customer Applications" subtitle="New account applications awaiting KYC review." />
 
       <div className="mb-4 flex gap-2">
         {["pending_approval", "info_requested", "approved", "rejected", ""].map((s) => (

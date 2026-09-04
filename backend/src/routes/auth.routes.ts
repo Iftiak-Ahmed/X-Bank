@@ -15,7 +15,7 @@ export const authRouter = Router();
 const LOGIN_ROLE_GROUPS: Record<string, string[]> = {
   client: ["client"],
   employee: ["employee"],
-  compliance: ["compliance_officer", "compliance_manager"],
+  compliance: ["compliance_officer"],
   admin: ["admin"],
 };
 
