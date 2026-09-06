@@ -96,10 +96,15 @@ clientRouter.get("/dashboard/balance-trend", asyncHandler(async (req, res) => {
   const accountIdSet = new Set(accountIds);
 
   const deltaByDay = new Map<string, number>();
+  const cashInByDay = new Map<string, number>();
+  const transferByDay = new Map<string, number>();
   for (let i = 0; i < days; i++) {
     const d = new Date(cutoff);
     d.setDate(cutoff.getDate() + i);
-    deltaByDay.set(localDateKey(d), 0);
+    const key = localDateKey(d);
+    deltaByDay.set(key, 0);
+    cashInByDay.set(key, 0);
+    transferByDay.set(key, 0);
   }
 
   for (const tx of txDocs) {
@@ -121,6 +126,9 @@ clientRouter.get("/dashboard/balance-trend", asyncHandler(async (req, res) => {
     else delta = (receiverIsMine ? amount : 0) - (senderIsMine ? amount : 0);
 
     deltaByDay.set(key, (deltaByDay.get(key) ?? 0) + delta);
+
+    if (tx.type === "deposit") cashInByDay.set(key, (cashInByDay.get(key) ?? 0) + amount);
+    else if (tx.type === "transfer") transferByDay.set(key, (transferByDay.get(key) ?? 0) + amount);
   }
 
   // Walk backward from today's known balance to reconstruct each day's
@@ -133,7 +141,14 @@ clientRouter.get("/dashboard/balance-trend", asyncHandler(async (req, res) => {
     runningBalance -= deltaByDay.get(sortedDays[i]) ?? 0;
   }
 
-  res.json(sortedDays.map((date) => ({ date, balance: Math.round(balanceByDay.get(date)! * 100) / 100 })));
+  res.json(
+    sortedDays.map((date) => ({
+      date,
+      balance: Math.round(balanceByDay.get(date)! * 100) / 100,
+      cashIn: Math.round(cashInByDay.get(date)! * 100) / 100,
+      transfer: Math.round(transferByDay.get(date)! * 100) / 100,
+    }))
+  );
 }));
 
 clientRouter.get("/accounts", asyncHandler(async (req, res) => {

@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Wallet, ShieldCheck, ArrowLeftRight, UserPlus, ListChecks } from "lucide-react";
 import { api } from "../../lib/api";
 import { Card, EmptyState, LoadingState, PageHeader, money } from "../../components/Shared";
@@ -16,7 +16,15 @@ interface Summary {
 interface BalancePoint {
   date: string;
   balance: number;
+  cashIn: number;
+  transfer: number;
 }
+
+const SERIES = [
+  { key: "balance", label: "Available Balance", color: "#14335c" },
+  { key: "cashIn", label: "Cash In", color: "#1f6f6b" },
+  { key: "transfer", label: "Transfer", color: "#b45309" },
+] as const;
 
 function shortDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -34,7 +42,12 @@ function BalanceTooltip({ active, payload, label }: any) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
       <div className="font-semibold text-navy-900">{shortDate(label)}</div>
-      <div className="mt-1 text-slate-600">{money(point.balance)}</div>
+      {SERIES.map((s) => (
+        <div key={s.key} className="mt-1 flex items-center gap-1.5 text-slate-600">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+          {s.label}: {money(point[s.key])}
+        </div>
+      ))}
     </div>
   );
 }
@@ -99,7 +112,7 @@ export default function ClientDashboard() {
 
       <Card className="mt-6 p-5">
         <h2 className="font-serif text-lg font-semibold text-navy-900">Balance Trend</h2>
-        <p className="text-sm text-slate-500">Your total balance across all accounts, last 14 days.</p>
+        <p className="text-sm text-slate-500">Available balance, cash in, and transfer amounts, last 14 days.</p>
         <div className="mt-4 h-64">
           {!trend ? (
             <LoadingState />
@@ -110,7 +123,10 @@ export default function ClientDashboard() {
                 <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
                 <YAxis tickFormatter={compactAmount} tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={56} domain={["auto", "auto"]} />
                 <Tooltip content={<BalanceTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: 4 }} />
-                <Line type="monotone" dataKey="balance" stroke="#1f6f6b" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                <Legend formatter={(value) => <span className="text-xs text-slate-600">{value}</span>} iconType="circle" iconSize={8} />
+                {SERIES.map((s) => (
+                  <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           )}
