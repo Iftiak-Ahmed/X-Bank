@@ -11,3 +11,10 @@ export class TransactionRuleBlockedError extends Error {
     this.name = "TransactionRuleBlockedError";
   }
 }
+
+export class OtpAlreadyUsedError extends Error {
+  constructor(message = "This confirmation code has already been used.") {
+    super(message);
+    this.name = "OtpAlreadyUsedError";
+  }
+}

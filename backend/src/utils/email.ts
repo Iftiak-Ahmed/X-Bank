@@ -1,7 +1,7 @@
 import { db, FieldValue } from "../config/firebase";
 import { env } from "../config/env";
 
-export type EmailType = "account_opening" | "staff_credentials" | "credentials_reset" | "password_reset";
+export type EmailType = "account_opening" | "staff_credentials" | "credentials_reset" | "password_reset" | "transfer_otp";
 
 interface EmailMessage {
   to: string;
@@ -171,6 +171,34 @@ This link will expire soon for your security.
 <p>We received a request to reset your X Bank password. Click the link below to choose a new one:</p>
 <p><a href="${resetLink}">${resetLink}</a></p>
 <p style="color:#888;font-size:12px">If you didn't request this, you can safely ignore this email — your password will not change. This link will expire soon for your security.</p>
+<p>— X Bank</p>`;
+
+  return { subject, text, html };
+}
+
+export function renderTransferOtpEmail(params: {
+  fullName: string;
+  otp: string;
+  amount: number;
+  currency: string;
+  receiverAccountNumber: string;
+}) {
+  const { fullName, otp, amount, currency, receiverAccountNumber } = params;
+  const subject = "Your X Bank transfer confirmation code";
+  const text = `Hello ${fullName},
+
+Use this code to confirm your transfer of ${amount} ${currency} to account ${receiverAccountNumber}:
+
+${otp}
+
+This code expires in 2 minutes. If you didn't request this transfer, do not share this code with anyone and contact X Bank support.
+
+— X Bank`;
+
+  const html = `<p>Hello ${fullName},</p>
+<p>Use this code to confirm your transfer of <b>${amount} ${currency}</b> to account <b>${receiverAccountNumber}</b>:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px">${otp}</p>
+<p style="color:#888;font-size:12px">This code expires in 2 minutes. If you didn't request this transfer, do not share this code with anyone and contact X Bank support.</p>
 <p>— X Bank</p>`;
 
   return { subject, text, html };

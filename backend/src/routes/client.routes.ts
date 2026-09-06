@@ -1,9 +1,10 @@
+import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { db, FieldValue } from "../config/firebase";
+import { db, FieldValue, Timestamp } from "../config/firebase";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
-import { generateAccountNumber, generateReference } from "../utils/ids";
+import { generateAccountNumber, generateReference, generateTransferOtp } from "../utils/ids";
 import { generateUniqueAccountNumber } from "../utils/unique";
 import { writeAuditLog } from "../utils/audit";
 import { runComplianceCheck } from "../compliance/monitoringService";
@@ -11,7 +12,8 @@ import { checkTransactionRulesInTransaction, recordTransactionRuleAlert } from "
 import { asyncHandler } from "../utils/asyncHandler";
 import { calculateDpsMaturity, DPS_ALLOWED_TERM_YEARS, DPS_PROFIT_RATE_PERCENT } from "../utils/dps";
 import { localDateKey } from "../utils/dateKey";
-import { InsufficientBalanceError, TransactionRuleBlockedError } from "../utils/errors";
+import { InsufficientBalanceError, OtpAlreadyUsedError, TransactionRuleBlockedError } from "../utils/errors";
+import { renderTransferOtpEmail, sendEmail } from "../utils/email";
 
 export const clientRouter = Router();
 clientRouter.use(requireAuth, requireRole("client"));
@@ -180,15 +182,29 @@ const transferSchema = z.object({
   location: z.string().default("BD"),
 });
 
-clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
+// ---------------------------------------------------------------------------
+// A client-initiated transfer is a two-step handshake: request-otp validates
+// the transfer and emails a 5-digit code (2-minute expiry) to the customer's
+// own registered email; confirm re-validates and only then moves money. The
+// pending transfer's details live on the OTP doc so confirm can't be handed
+// different parameters than what the customer actually saw in the email.
+// ---------------------------------------------------------------------------
+
+const TRANSFER_OTP_TTL_MS = 2 * 60 * 1000;
+const TRANSFER_OTP_MAX_ATTEMPTS = 5;
+
+function hashOtp(otp: string): string {
+  return crypto.createHash("sha256").update(otp).digest("hex");
+}
+
+clientRouter.post("/transactions/transfer/request-otp", asyncHandler(async (req, res) => {
   const customerId = await requireOwnCustomer(req, res);
   if (!customerId) return;
   const parsed = transferSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
   const { senderAccountId, receiverAccountNumber, amount, currency, purpose, description, location } = parsed.data;
 
-  const senderRef = db.collection("accounts").doc(senderAccountId);
-  const senderSnap = await senderRef.get();
+  const senderSnap = await db.collection("accounts").doc(senderAccountId).get();
   if (!senderSnap.exists || senderSnap.data()!.customerId !== customerId) {
     return res.status(403).json({ error: "Not your account." });
   }
@@ -201,6 +217,82 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
 
   const receiverSnap = await db.collection("accounts").where("accountNumber", "==", receiverAccountNumber).limit(1).get();
   if (receiverSnap.empty) return res.status(404).json({ error: "Beneficiary account not found." });
+
+  const customerSnap = await db.collection("customers").doc(customerId).get();
+  const fullName = customerSnap.exists ? customerSnap.data()!.fullName ?? "Customer" : "Customer";
+
+  const otp = generateTransferOtp();
+  const otpRef = db.collection("transferOtps").doc();
+  await otpRef.set({
+    customerId,
+    senderAccountId,
+    receiverAccountNumber,
+    amount,
+    currency,
+    purpose,
+    description: description ?? "",
+    location,
+    otpHash: hashOtp(otp),
+    attempts: 0,
+    used: false,
+    expiresAt: Timestamp.fromMillis(Date.now() + TRANSFER_OTP_TTL_MS),
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  await sendEmail({
+    to: req.user!.email,
+    type: "transfer_otp",
+    relatedApplicationId: null,
+    ...renderTransferOtpEmail({ fullName, otp, amount, currency, receiverAccountNumber }),
+  });
+
+  res.status(201).json({ otpId: otpRef.id, expiresInSeconds: TRANSFER_OTP_TTL_MS / 1000 });
+}));
+
+const confirmOtpSchema = z.object({ otpId: z.string(), otp: z.string().length(5) });
+
+clientRouter.post("/transactions/transfer/confirm", asyncHandler(async (req, res) => {
+  const customerId = await requireOwnCustomer(req, res);
+  if (!customerId) return;
+  const parsed = confirmOtpSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
+  const { otpId, otp } = parsed.data;
+
+  const otpRef = db.collection("transferOtps").doc(otpId);
+  const otpSnap = await otpRef.get();
+  if (!otpSnap.exists || otpSnap.data()!.customerId !== customerId) {
+    return res.status(404).json({ error: "Confirmation code not found. Please start the transfer again." });
+  }
+  const otpData = otpSnap.data()!;
+  if (otpData.used) return res.status(400).json({ error: "This confirmation code has already been used." });
+  if ((otpData.expiresAt as FirebaseFirestore.Timestamp).toMillis() < Date.now()) {
+    return res.status(400).json({ error: "This confirmation code has expired. Please request a new one." });
+  }
+  if (otpData.attempts >= TRANSFER_OTP_MAX_ATTEMPTS) {
+    return res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+  }
+  if (hashOtp(otp) !== otpData.otpHash) {
+    await otpRef.update({ attempts: FieldValue.increment(1) });
+    return res.status(400).json({ error: "Incorrect confirmation code." });
+  }
+
+  const { senderAccountId, receiverAccountNumber, amount, currency, purpose, description, location } = otpData as {
+    senderAccountId: string;
+    receiverAccountNumber: string;
+    amount: number;
+    currency: string;
+    purpose: string;
+    description: string;
+    location: string;
+  };
+
+  const senderRef = db.collection("accounts").doc(senderAccountId);
+  const senderSnap = await senderRef.get();
+  if (!senderSnap.exists || senderSnap.data()!.customerId !== customerId) {
+    return res.status(403).json({ error: "Not your account." });
+  }
+  const receiverSnap = await db.collection("accounts").where("accountNumber", "==", receiverAccountNumber).limit(1).get();
+  if (receiverSnap.empty) return res.status(404).json({ error: "Beneficiary account not found." });
   const receiverDoc = receiverSnap.docs[0];
 
   const customerSnap = await db.collection("customers").doc(customerId).get();
@@ -210,6 +302,8 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
   let violations: Awaited<ReturnType<typeof checkTransactionRulesInTransaction>> = [];
   try {
     await db.runTransaction(async (t) => {
+      const freshOtp = await t.get(otpRef);
+      if (freshOtp.data()!.used) throw new OtpAlreadyUsedError();
       const freshSender = await t.get(senderRef);
       const freshReceiver = await t.get(receiverDoc.ref);
       if (Number(freshSender.data()!.balance) < amount) throw new InsufficientBalanceError();
@@ -225,6 +319,7 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
 
       t.update(senderRef, { balance: FieldValue.increment(-amount) });
       t.update(receiverDoc.ref, { balance: FieldValue.increment(amount) });
+      t.update(otpRef, { used: true });
       t.set(txRef, {
         reference: generateReference("TXN"),
         senderAccountId,
@@ -249,6 +344,7 @@ clientRouter.post("/transactions/transfer", asyncHandler(async (req, res) => {
   } catch (err) {
     if (err instanceof InsufficientBalanceError) return res.status(400).json({ error: err.message });
     if (err instanceof TransactionRuleBlockedError) return res.status(403).json({ error: err.message });
+    if (err instanceof OtpAlreadyUsedError) return res.status(400).json({ error: err.message });
     throw err;
   }
 

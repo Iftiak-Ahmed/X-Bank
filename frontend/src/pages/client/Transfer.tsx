@@ -17,7 +17,7 @@ interface Beneficiary {
   accountNumber: string;
 }
 
-type Step = "form" | "confirm" | "result";
+type Step = "form" | "confirm" | "otp" | "result";
 
 export default function Transfer() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -27,6 +27,9 @@ export default function Transfer() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ status: string; reference: string; amount: number } | null>(null);
+  const [otpId, setOtpId] = useState<string | null>(null);
+  const [otpValue, setOtpValue] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(0);
 
   const [form, setForm] = useState({
     senderAccountId: "",
@@ -43,25 +46,47 @@ export default function Transfer() {
     });
   }, []);
 
+  useEffect(() => {
+    if (step !== "otp" || secondsLeft <= 0) return;
+    const id = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [step, secondsLeft]);
+
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  async function submitTransfer() {
+  async function requestOtp() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await api.post<any>("/api/client/transactions/transfer", {
+      const res = await api.post<{ otpId: string; expiresInSeconds: number }>("/api/client/transactions/transfer/request-otp", {
         senderAccountId: form.senderAccountId,
         receiverAccountNumber: form.receiverAccountNumber,
         amount: Number(form.amount),
         purpose: form.remark,
       });
+      setOtpId(res.otpId);
+      setSecondsLeft(res.expiresInSeconds);
+      setOtpValue("");
+      setStep("otp");
+    } catch (err: any) {
+      setError(err.message ?? "Could not send confirmation code.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function confirmTransfer() {
+    if (!otpId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await api.post<any>("/api/client/transactions/transfer/confirm", { otpId, otp: otpValue });
       setResult({ status: res.status, reference: res.reference, amount: res.amount });
       setStep("result");
     } catch (err: any) {
       setError(err.message ?? "Transfer failed.");
-      setStep("form");
     } finally {
       setSubmitting(false);
     }
@@ -86,7 +111,15 @@ export default function Transfer() {
           </p>
           <p className="mt-4 font-mono text-sm text-slate-400">{result.reference}</p>
           <p className="mt-1 font-serif text-2xl font-semibold text-navy-900">{money(result.amount)}</p>
-          <SecondaryButton className="mt-6" onClick={() => { setStep("form"); setForm((f) => ({ ...f, amount: "", remark: "" })); }}>
+          <SecondaryButton
+            className="mt-6"
+            onClick={() => {
+              setStep("form");
+              setForm((f) => ({ ...f, amount: "", remark: "" }));
+              setOtpId(null);
+              setOtpValue("");
+            }}
+          >
             Make another transfer
           </SecondaryButton>
         </Card>
@@ -108,10 +141,52 @@ export default function Transfer() {
           {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
           <div className="mt-6 flex gap-3">
             <SecondaryButton onClick={() => setStep("form")} className="flex-1">Back</SecondaryButton>
-            <PrimaryButton onClick={submitTransfer} disabled={submitting} className="flex-1">
-              {submitting ? "Submitting…" : "Confirm & Send"}
+            <PrimaryButton onClick={requestOtp} disabled={submitting} className="flex-1">
+              {submitting ? "Sending code…" : "Send confirmation code"}
             </PrimaryButton>
           </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (step === "otp") {
+    return (
+      <div className="mx-auto max-w-md">
+        <PageHeader title="Enter confirmation code" />
+        <Card className="p-6">
+          <p className="text-sm text-slate-500">
+            We've emailed a 5-digit code to your registered email address. Enter it below to confirm this transfer.
+          </p>
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={5}
+            placeholder="00000"
+            value={otpValue}
+            onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 5))}
+            className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-center text-2xl tracking-[0.5em] text-navy-900"
+          />
+          <p className="mt-2 text-xs text-slate-400">
+            {secondsLeft > 0
+              ? `Code expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`
+              : "Code expired — request a new one below."}
+          </p>
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          <div className="mt-6 flex gap-3">
+            <SecondaryButton onClick={() => setStep("confirm")} className="flex-1">Back</SecondaryButton>
+            <PrimaryButton onClick={confirmTransfer} disabled={submitting || otpValue.length !== 5 || secondsLeft <= 0} className="flex-1">
+              {submitting ? "Confirming…" : "Confirm transfer"}
+            </PrimaryButton>
+          </div>
+          <button
+            type="button"
+            onClick={requestOtp}
+            disabled={submitting || secondsLeft > 0}
+            className="mt-4 w-full text-center text-sm font-semibold text-teal-700 disabled:text-slate-300"
+          >
+            Resend code
+          </button>
         </Card>
       </div>
     );

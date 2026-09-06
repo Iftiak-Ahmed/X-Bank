@@ -39,6 +39,11 @@ export function generateReference(prefix: string) {
   return `${prefix}-${alphaNum()}`;
 }
 
+/** Exactly 5 digits, e.g. "58321". One-time code emailed to confirm a transfer. */
+export function generateTransferOtp() {
+  return digits5();
+}
+
 export function generateApplicationId() {
   return `APP-${alphaNum()}`;
 }
