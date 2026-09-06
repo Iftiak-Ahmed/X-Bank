@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import { Logo } from "../../components/Logo";
@@ -395,17 +395,40 @@ function Field({
 }
 
 function FileField({ label, file, onChange }: { label: string; file: File | null; onChange: (f: File | null) => void }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
   return (
     <div>
       <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</label>
-      <input
-        type="file"
-        required
-        accept="image/jpeg,image/png,image/webp"
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
-        className="mt-1 w-full rounded-lg border border-slate-400 bg-slate-50 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-200 file:px-3 file:py-1.5 file:text-xs file:font-semibold"
-      />
-      {file && <p className="mt-1 text-xs text-teal-700">{file.name}</p>}
+      <div className="mt-1 flex items-center gap-3">
+        <div className="flex-1">
+          <input
+            type="file"
+            required
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+            className="w-full rounded-lg border border-slate-400 bg-slate-50 px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-200 file:px-3 file:py-1.5 file:text-xs file:font-semibold"
+          />
+          {file && <p className="mt-1 text-xs text-teal-700">{file.name}</p>}
+        </div>
+        {previewUrl && (
+          <img
+            src={previewUrl}
+            alt={`${label} preview`}
+            className="h-14 w-14 shrink-0 rounded-lg border border-slate-300 object-cover"
+          />
+        )}
+      </div>
     </div>
   );
 }
