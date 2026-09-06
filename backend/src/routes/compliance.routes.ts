@@ -6,6 +6,7 @@ import { requireRole } from "../middleware/rbac";
 import { writeAuditLog } from "../utils/audit";
 import { emitAlertUpdated } from "../realtime/socket";
 import { asyncHandler } from "../utils/asyncHandler";
+import { localDateKey } from "../utils/dateKey";
 
 export const complianceRouter = Router();
 complianceRouter.use(requireAuth, requireRole("compliance_officer"));
@@ -26,6 +27,38 @@ complianceRouter.get("/dashboard/kpis", asyncHandler(async (_req, res) => {
     criticalAlerts: alertsCritical.data().count,
     kycIssues: kycIssues.data().count,
   });
+}));
+
+complianceRouter.get("/dashboard/risk-trend", asyncHandler(async (_req, res) => {
+  const days = 14;
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const cutoff = new Date(dayStart);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+
+  // Single range filter on createdAt — no composite index needed, same shape
+  // already used elsewhere for dashboard trend charts.
+  const snap = await db.collection("transactions").where("createdAt", ">=", cutoff).get();
+
+  const countsByDay = new Map<string, { total: number; low: number; medium: number; high: number; critical: number }>();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(cutoff);
+    d.setDate(cutoff.getDate() + i);
+    countsByDay.set(localDateKey(d), { total: 0, low: 0, medium: 0, high: 0, critical: 0 });
+  }
+
+  snap.docs.forEach((doc) => {
+    const data = doc.data();
+    const createdAt = data.createdAt?.toDate?.();
+    if (!createdAt) return;
+    const bucket = countsByDay.get(localDateKey(createdAt));
+    if (!bucket) return;
+    bucket.total++;
+    const level = data.riskLevel as string | null;
+    if (level === "low" || level === "medium" || level === "high" || level === "critical") bucket[level]++;
+  });
+
+  res.json([...countsByDay.entries()].map(([date, v]) => ({ date, ...v })));
 }));
 
 complianceRouter.get("/transactions", asyncHandler(async (req, res) => {
