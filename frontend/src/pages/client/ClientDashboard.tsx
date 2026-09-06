@@ -113,19 +113,49 @@ export default function ClientDashboard() {
       <Card className="mt-6 p-5">
         <h2 className="font-serif text-lg font-semibold text-navy-900">Balance Trend</h2>
         <p className="text-sm text-slate-500">Available balance, cash in, and transfer amounts, last 14 days.</p>
-        <div className="mt-4 h-64">
+        <div className="mt-4 h-80">
           {!trend ? (
             <LoadingState />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
-                <YAxis tickFormatter={compactAmount} tick={{ fontSize: 12, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={56} domain={["auto", "auto"]} />
+              <LineChart data={trend} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+                <CartesianGrid stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={shortDate}
+                  tick={{ fontSize: 12, fill: "#94a3b8" }}
+                  axisLine={{ stroke: "#e2e8f0" }}
+                  tickLine={false}
+                  label={{ value: "Date", position: "insideBottom", offset: -6, fill: "#64748b", fontSize: 12 }}
+                />
+                <YAxis
+                  tickFormatter={compactAmount}
+                  tick={{ fontSize: 12, fill: "#94a3b8" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={64}
+                  domain={["auto", "auto"]}
+                  label={{ value: "Amount (BDT)", angle: -90, position: "insideLeft", fill: "#64748b", fontSize: 12 }}
+                />
                 <Tooltip content={<BalanceTooltip />} cursor={{ stroke: "#cbd5e1", strokeDasharray: 4 }} />
-                <Legend formatter={(value) => <span className="text-xs text-slate-600">{value}</span>} iconType="circle" iconSize={8} />
+                <Legend
+                  formatter={(value) => <span className="text-xs text-slate-600">{value}</span>}
+                  iconType="circle"
+                  iconSize={10}
+                  verticalAlign="bottom"
+                  wrapperStyle={{ paddingTop: 24, border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 16px" }}
+                />
                 {SERIES.map((s) => (
-                  <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  <Line
+                    key={s.key}
+                    type="monotone"
+                    dataKey={s.key}
+                    name={s.label}
+                    stroke={s.color}
+                    strokeWidth={2.5}
+                    dot={{ r: 4, strokeWidth: 0, fill: s.color }}
+                    activeDot={{ r: 6 }}
+                  />
                 ))}
               </LineChart>
             </ResponsiveContainer>
