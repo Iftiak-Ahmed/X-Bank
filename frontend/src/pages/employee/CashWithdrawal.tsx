@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { Card, PageHeader, PrimaryButton, SecondaryButton, money } from "../../components/Shared";
 import { StatusPill } from "../../components/RiskChip";
@@ -22,6 +22,15 @@ export default function CashWithdrawal() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<{ reference: string; amount: number; currency: string; newBalance: number } | null>(null);
+  const [otpId, setOtpId] = useState<string | null>(null);
+  const [otpValue, setOtpValue] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  useEffect(() => {
+    if (!otpId || secondsLeft <= 0) return;
+    const id = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [otpId, secondsLeft]);
 
   async function lookup(e: FormEvent) {
     e.preventDefault();
@@ -52,8 +61,7 @@ export default function CashWithdrawal() {
     }
   }
 
-  async function submitCashOut(e: FormEvent) {
-    e.preventDefault();
+  async function requestOtp() {
     setSubmitError(null);
     const amt = Number(amount);
     if (!result || !amt || amt <= 0) return;
@@ -63,14 +71,36 @@ export default function CashWithdrawal() {
     }
     setSubmitting(true);
     try {
-      const tx = await api.post<{ reference: string; amount: number; currency: string }>("/api/employee/cash-out", {
+      const res = await api.post<{ otpId: string; expiresInSeconds: number }>("/api/employee/cash-out/request-otp", {
         accountNumber: result.account.accountNumber,
         amount: amt,
       });
-      setReceipt({ reference: tx.reference, amount: tx.amount, currency: tx.currency, newBalance: result.account.balance - amt });
+      setOtpId(res.otpId);
+      setSecondsLeft(res.expiresInSeconds);
+      setOtpValue("");
+    } catch (err: any) {
+      setSubmitError(err.message ?? "Could not send confirmation code.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function confirmCashOut(e: FormEvent) {
+    e.preventDefault();
+    if (!otpId || !result) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const tx = await api.post<{ reference: string; amount: number; currency: string }>("/api/employee/cash-out/confirm", {
+        otpId,
+        otp: otpValue,
+      });
+      setReceipt({ reference: tx.reference, amount: tx.amount, currency: tx.currency, newBalance: result.account.balance - Number(amount) });
       setAmount("");
       setResult(null);
       setAccountNumber("");
+      setOtpId(null);
+      setOtpValue("");
     } catch (err: any) {
       setSubmitError(err.message ?? "Cash withdrawal failed.");
     } finally {
@@ -108,27 +138,67 @@ export default function CashWithdrawal() {
               <Row label="Current balance" value={money(result.account.balance, result.account.currency)} />
             </dl>
 
-            <form onSubmit={submitCashOut} className="mt-6 border-t border-slate-100 pt-4">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Amount to withdraw</label>
-              <input
-                type="number"
-                min="1"
-                max={result.account.balance}
-                step="0.01"
-                required
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                placeholder="e.g. 5000"
-              />
-              {submitError && <p className="mt-2 text-sm text-red-600">{submitError}</p>}
-              <PrimaryButton type="submit" disabled={submitting || result.account.status !== "active"} className="mt-3 w-full">
-                {submitting ? "Processing…" : "Confirm Withdrawal"}
-              </PrimaryButton>
-              {result.account.status !== "active" && (
-                <p className="mt-2 text-xs text-red-600">This account is {result.account.status} and can't process withdrawals.</p>
-              )}
-            </form>
+            {!otpId ? (
+              <form onSubmit={(e) => { e.preventDefault(); requestOtp(); }} className="mt-6 border-t border-slate-100 pt-4">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Amount to withdraw</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={result.account.balance}
+                  step="0.01"
+                  required
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="e.g. 5000"
+                />
+                {submitError && <p className="mt-2 text-sm text-red-600">{submitError}</p>}
+                <PrimaryButton type="submit" disabled={submitting || result.account.status !== "active"} className="mt-3 w-full">
+                  {submitting ? "Sending code…" : "Send confirmation code"}
+                </PrimaryButton>
+                {result.account.status !== "active" && (
+                  <p className="mt-2 text-xs text-red-600">This account is {result.account.status} and can't process withdrawals.</p>
+                )}
+              </form>
+            ) : (
+              <form onSubmit={confirmCashOut} className="mt-6 border-t border-slate-100 pt-4">
+                <p className="text-sm text-slate-500">
+                  A 5-digit code was emailed to the account holder. Enter it below to confirm withdrawing {money(Number(amount), result.account.currency)}.
+                </p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
+                  required
+                  placeholder="00000"
+                  value={otpValue}
+                  onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-center text-2xl tracking-[0.5em] text-navy-900"
+                />
+                <p className="mt-2 text-xs text-slate-400">
+                  {secondsLeft > 0
+                    ? `Code expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`
+                    : "Code expired — request a new one below."}
+                </p>
+                {submitError && <p className="mt-2 text-sm text-red-600">{submitError}</p>}
+                <div className="mt-3 flex gap-3">
+                  <SecondaryButton type="button" onClick={() => { setOtpId(null); setOtpValue(""); setSubmitError(null); }} className="flex-1">
+                    Back
+                  </SecondaryButton>
+                  <PrimaryButton type="submit" disabled={submitting || otpValue.length !== 5 || secondsLeft <= 0} className="flex-1">
+                    {submitting ? "Confirming…" : "Confirm Withdrawal"}
+                  </PrimaryButton>
+                </div>
+                <button
+                  type="button"
+                  onClick={requestOtp}
+                  disabled={submitting || secondsLeft > 0}
+                  className="mt-3 w-full text-center text-sm font-semibold text-teal-700 disabled:text-slate-300"
+                >
+                  Resend code
+                </button>
+              </form>
+            )}
           </Card>
 
           <Card className="p-5">

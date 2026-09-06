@@ -1,7 +1,7 @@
 import { db, FieldValue } from "../config/firebase";
 import { env } from "../config/env";
 
-export type EmailType = "account_opening" | "staff_credentials" | "credentials_reset" | "password_reset" | "transfer_otp";
+export type EmailType = "account_opening" | "staff_credentials" | "credentials_reset" | "password_reset" | "transfer_otp" | "withdrawal_otp";
 
 interface EmailMessage {
   to: string;
@@ -199,6 +199,34 @@ This code expires in 2 minutes. If you didn't request this transfer, do not shar
 <p>Use this code to confirm your transfer of <b>${amount} ${currency}</b> to account <b>${receiverAccountNumber}</b>:</p>
 <p style="font-size:28px;font-weight:700;letter-spacing:6px">${otp}</p>
 <p style="color:#888;font-size:12px">This code expires in 2 minutes. If you didn't request this transfer, do not share this code with anyone and contact X Bank support.</p>
+<p>— X Bank</p>`;
+
+  return { subject, text, html };
+}
+
+export function renderCashWithdrawalOtpEmail(params: {
+  fullName: string;
+  otp: string;
+  amount: number;
+  currency: string;
+  accountNumber: string;
+}) {
+  const { fullName, otp, amount, currency, accountNumber } = params;
+  const subject = "Your X Bank cash withdrawal confirmation code";
+  const text = `Hello ${fullName},
+
+A branch teller has requested a cash withdrawal of ${amount} ${currency} from your account ${accountNumber}. Use this code to confirm it:
+
+${otp}
+
+This code expires in 2 minutes. If you didn't authorize this withdrawal, do not share this code with anyone and contact X Bank support immediately.
+
+— X Bank`;
+
+  const html = `<p>Hello ${fullName},</p>
+<p>A branch teller has requested a cash withdrawal of <b>${amount} ${currency}</b> from your account <b>${accountNumber}</b>. Use this code to confirm it:</p>
+<p style="font-size:28px;font-weight:700;letter-spacing:6px">${otp}</p>
+<p style="color:#888;font-size:12px">This code expires in 2 minutes. If you didn't authorize this withdrawal, do not share this code with anyone and contact X Bank support immediately.</p>
 <p>— X Bank</p>`;
 
   return { subject, text, html };

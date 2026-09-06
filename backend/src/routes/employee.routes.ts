@@ -1,14 +1,23 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, FieldValue } from "../config/firebase";
+import { db, FieldValue, Timestamp } from "../config/firebase";
 import { requireAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { writeAuditLog } from "../utils/audit";
 import { asyncHandler } from "../utils/asyncHandler";
-import { generateReference } from "../utils/ids";
+import { generateReference, generateTransferOtp } from "../utils/ids";
 import { readKycDocument } from "../utils/fileStorage";
 import { runComplianceCheck } from "../compliance/monitoringService";
 import { localDateKey } from "../utils/dateKey";
+import { hashOtp, OTP_MAX_ATTEMPTS, OTP_TTL_MS } from "../utils/otp";
+import { renderCashWithdrawalOtpEmail, renderTransferOtpEmail, sendEmail } from "../utils/email";
+import { OtpAlreadyUsedError } from "../utils/errors";
+
+async function getAccountOwnerContact(customerId: string): Promise<{ email: string; fullName: string }> {
+  const customerSnap = await db.collection("customers").doc(customerId).get();
+  const customer = customerSnap.data();
+  return { email: customer?.email ?? "", fullName: customer?.fullName ?? "Customer" };
+}
 
 export const employeeRouter = Router();
 employeeRouter.use(requireAuth, requireRole("employee"));
@@ -231,12 +240,17 @@ employeeRouter.post("/cash-in", asyncHandler(async (req, res) => {
   res.status(201).json({ id: txRef.id, ...finalSnap.data(), complianceResult: result });
 }));
 
+// A branch withdrawal moves money out of a customer's account on a teller's
+// say-so, so — same as a client-initiated transfer — it's gated behind a
+// 5-digit code emailed to the account owner (2-minute expiry) rather than
+// executed on the teller's request alone.
+
 const cashOutSchema = z.object({
   accountNumber: z.string().min(4),
   amount: z.number().positive(),
 });
 
-employeeRouter.post("/cash-out", asyncHandler(async (req, res) => {
+employeeRouter.post("/cash-out/request-otp", asyncHandler(async (req, res) => {
   const parsed = cashOutSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
   const { accountNumber, amount } = parsed.data;
@@ -248,33 +262,103 @@ employeeRouter.post("/cash-out", asyncHandler(async (req, res) => {
   if (account.status !== "active") return res.status(400).json({ error: `This account is ${account.status}.` });
   if (Number(account.balance) < amount) return res.status(400).json({ error: "Insufficient balance." });
 
-  const txRef = db.collection("transactions").doc();
-  await db.runTransaction(async (t) => {
-    const freshAccount = await t.get(accountDoc.ref);
-    if (Number(freshAccount.data()!.balance) < amount) throw new Error("Insufficient balance.");
+  const { email, fullName } = await getAccountOwnerContact(account.customerId);
+  if (!email) return res.status(400).json({ error: "This customer has no email on file to send a confirmation code to." });
 
-    t.update(accountDoc.ref, { balance: FieldValue.increment(-amount) });
-    t.set(txRef, {
-      reference: generateReference("CSH"),
-      senderAccountId: accountDoc.id,
-      senderCustomerId: account.customerId,
-      receiverAccountId: accountDoc.id,
-      receiverCustomerId: account.customerId,
-      amount,
-      currency: account.currency ?? "BDT",
-      type: "cash_out",
-      purpose: "Branch cash withdrawal",
-      channel: "branch",
-      location: "BD",
-      performedBy: req.user!.uid,
-      status: "pending",
-      complianceStatus: "pending_check",
-      riskScore: null,
-      riskLevel: null,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+  const otp = generateTransferOtp();
+  const otpRef = db.collection("employeeOtps").doc();
+  await otpRef.set({
+    type: "cash_out",
+    accountNumber,
+    amount,
+    currency: account.currency ?? "BDT",
+    performedBy: req.user!.uid,
+    otpHash: hashOtp(otp),
+    attempts: 0,
+    used: false,
+    expiresAt: Timestamp.fromMillis(Date.now() + OTP_TTL_MS),
+    createdAt: FieldValue.serverTimestamp(),
   });
+
+  await sendEmail({
+    to: email,
+    type: "withdrawal_otp",
+    relatedApplicationId: null,
+    ...renderCashWithdrawalOtpEmail({ fullName, otp, amount, currency: account.currency ?? "BDT", accountNumber }),
+  });
+
+  res.status(201).json({ otpId: otpRef.id, expiresInSeconds: OTP_TTL_MS / 1000 });
+}));
+
+const confirmEmployeeOtpSchema = z.object({ otpId: z.string(), otp: z.string().length(5) });
+
+employeeRouter.post("/cash-out/confirm", asyncHandler(async (req, res) => {
+  const parsed = confirmEmployeeOtpSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
+  const { otpId, otp } = parsed.data;
+
+  const otpRef = db.collection("employeeOtps").doc(otpId);
+  const otpSnap = await otpRef.get();
+  if (!otpSnap.exists || otpSnap.data()!.type !== "cash_out") {
+    return res.status(404).json({ error: "Confirmation code not found. Please start the withdrawal again." });
+  }
+  const otpData = otpSnap.data()!;
+  if (otpData.used) return res.status(400).json({ error: "This confirmation code has already been used." });
+  if ((otpData.expiresAt as FirebaseFirestore.Timestamp).toMillis() < Date.now()) {
+    return res.status(400).json({ error: "This confirmation code has expired. Please request a new one." });
+  }
+  if (otpData.attempts >= OTP_MAX_ATTEMPTS) {
+    return res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+  }
+  if (hashOtp(otp) !== otpData.otpHash) {
+    await otpRef.update({ attempts: FieldValue.increment(1) });
+    return res.status(400).json({ error: "Incorrect confirmation code." });
+  }
+
+  const { accountNumber, amount } = otpData as { accountNumber: string; amount: number };
+
+  const accountSnap = await db.collection("accounts").where("accountNumber", "==", accountNumber).limit(1).get();
+  if (accountSnap.empty) return res.status(404).json({ error: "No account found with that number." });
+  const accountDoc = accountSnap.docs[0];
+  const account = accountDoc.data();
+  if (account.status !== "active") return res.status(400).json({ error: `This account is ${account.status}.` });
+
+  const txRef = db.collection("transactions").doc();
+  try {
+    await db.runTransaction(async (t) => {
+      const freshOtp = await t.get(otpRef);
+      if (freshOtp.data()!.used) throw new OtpAlreadyUsedError();
+      const freshAccount = await t.get(accountDoc.ref);
+      if (Number(freshAccount.data()!.balance) < amount) throw new Error("Insufficient balance.");
+
+      t.update(accountDoc.ref, { balance: FieldValue.increment(-amount) });
+      t.update(otpRef, { used: true });
+      t.set(txRef, {
+        reference: generateReference("CSH"),
+        senderAccountId: accountDoc.id,
+        senderCustomerId: account.customerId,
+        receiverAccountId: accountDoc.id,
+        receiverCustomerId: account.customerId,
+        amount,
+        currency: account.currency ?? "BDT",
+        type: "cash_out",
+        purpose: "Branch cash withdrawal",
+        channel: "branch",
+        location: "BD",
+        performedBy: otpData.performedBy,
+        status: "pending",
+        complianceStatus: "pending_check",
+        riskScore: null,
+        riskLevel: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (err) {
+    if (err instanceof OtpAlreadyUsedError) return res.status(400).json({ error: err.message });
+    if (err instanceof Error && err.message === "Insufficient balance.") return res.status(400).json({ error: err.message });
+    throw err;
+  }
 
   await writeAuditLog({
     userId: req.user!.uid,
@@ -296,7 +380,9 @@ employeeRouter.post("/cash-out", asyncHandler(async (req, res) => {
 // Fund transfer — a teller-assisted transfer between two customer accounts.
 // The sender is verified against their KYC photo/NID/signature on file (they're
 // the one authorizing money to leave their account); the receiver only needs
-// name + account number confirmation.
+// name + account number confirmation. Since it's the teller driving this (not
+// the sender typing their own password), execution is also gated behind a
+// 5-digit code emailed to the sender — same pattern as branch withdrawals.
 // ---------------------------------------------------------------------------
 
 const fundTransferSchema = z.object({
@@ -305,7 +391,7 @@ const fundTransferSchema = z.object({
   amount: z.number().positive(),
 });
 
-employeeRouter.post("/fund-transfer", asyncHandler(async (req, res) => {
+employeeRouter.post("/fund-transfer/request-otp", asyncHandler(async (req, res) => {
   const parsed = fundTransferSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
   const { senderAccountNumber, receiverAccountNumber, amount } = parsed.data;
@@ -321,10 +407,8 @@ employeeRouter.post("/fund-transfer", asyncHandler(async (req, res) => {
   if (senderSnap.empty) return res.status(404).json({ error: "Sender account not found." });
   if (receiverSnap.empty) return res.status(404).json({ error: "Receiver account not found." });
 
-  const senderDoc = senderSnap.docs[0];
-  const receiverDoc = receiverSnap.docs[0];
-  const sender = senderDoc.data();
-  const receiver = receiverDoc.data();
+  const sender = senderSnap.docs[0].data();
+  const receiver = receiverSnap.docs[0].data();
 
   if (sender.accountType === "dps" || receiver.accountType === "dps") {
     return res.status(400).json({ error: "DPS accounts can't send or receive fund transfers." });
@@ -333,34 +417,115 @@ employeeRouter.post("/fund-transfer", asyncHandler(async (req, res) => {
   if (receiver.status !== "active") return res.status(400).json({ error: `Receiver account is ${receiver.status}.` });
   if (Number(sender.balance) < amount) return res.status(400).json({ error: "Insufficient balance in sender's account." });
 
-  const txRef = db.collection("transactions").doc();
-  await db.runTransaction(async (t) => {
-    const freshSender = await t.get(senderDoc.ref);
-    if (Number(freshSender.data()!.balance) < amount) throw new Error("Insufficient balance in sender's account.");
+  const { email, fullName } = await getAccountOwnerContact(sender.customerId);
+  if (!email) return res.status(400).json({ error: "This customer has no email on file to send a confirmation code to." });
 
-    t.update(senderDoc.ref, { balance: FieldValue.increment(-amount) });
-    t.update(receiverDoc.ref, { balance: FieldValue.increment(amount) });
-    t.set(txRef, {
-      reference: generateReference("FTX"),
-      senderAccountId: senderDoc.id,
-      senderCustomerId: sender.customerId,
-      receiverAccountId: receiverDoc.id,
-      receiverCustomerId: receiver.customerId,
-      amount,
-      currency: sender.currency ?? "BDT",
-      type: "fund_transfer",
-      purpose: "Branch-assisted fund transfer",
-      channel: "branch",
-      location: "BD",
-      performedBy: req.user!.uid,
-      status: "pending",
-      complianceStatus: "pending_check",
-      riskScore: null,
-      riskLevel: null,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+  const otp = generateTransferOtp();
+  const otpRef = db.collection("employeeOtps").doc();
+  await otpRef.set({
+    type: "fund_transfer",
+    senderAccountNumber,
+    receiverAccountNumber,
+    amount,
+    currency: sender.currency ?? "BDT",
+    performedBy: req.user!.uid,
+    otpHash: hashOtp(otp),
+    attempts: 0,
+    used: false,
+    expiresAt: Timestamp.fromMillis(Date.now() + OTP_TTL_MS),
+    createdAt: FieldValue.serverTimestamp(),
   });
+
+  await sendEmail({
+    to: email,
+    type: "transfer_otp",
+    relatedApplicationId: null,
+    ...renderTransferOtpEmail({ fullName, otp, amount, currency: sender.currency ?? "BDT", receiverAccountNumber }),
+  });
+
+  res.status(201).json({ otpId: otpRef.id, expiresInSeconds: OTP_TTL_MS / 1000 });
+}));
+
+employeeRouter.post("/fund-transfer/confirm", asyncHandler(async (req, res) => {
+  const parsed = confirmEmployeeOtpSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message });
+  const { otpId, otp } = parsed.data;
+
+  const otpRef = db.collection("employeeOtps").doc(otpId);
+  const otpSnap = await otpRef.get();
+  if (!otpSnap.exists || otpSnap.data()!.type !== "fund_transfer") {
+    return res.status(404).json({ error: "Confirmation code not found. Please start the transfer again." });
+  }
+  const otpData = otpSnap.data()!;
+  if (otpData.used) return res.status(400).json({ error: "This confirmation code has already been used." });
+  if ((otpData.expiresAt as FirebaseFirestore.Timestamp).toMillis() < Date.now()) {
+    return res.status(400).json({ error: "This confirmation code has expired. Please request a new one." });
+  }
+  if (otpData.attempts >= OTP_MAX_ATTEMPTS) {
+    return res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
+  }
+  if (hashOtp(otp) !== otpData.otpHash) {
+    await otpRef.update({ attempts: FieldValue.increment(1) });
+    return res.status(400).json({ error: "Incorrect confirmation code." });
+  }
+
+  const { senderAccountNumber, receiverAccountNumber, amount } = otpData as {
+    senderAccountNumber: string;
+    receiverAccountNumber: string;
+    amount: number;
+  };
+
+  const [senderSnap, receiverSnap] = await Promise.all([
+    db.collection("accounts").where("accountNumber", "==", senderAccountNumber).limit(1).get(),
+    db.collection("accounts").where("accountNumber", "==", receiverAccountNumber).limit(1).get(),
+  ]);
+  if (senderSnap.empty) return res.status(404).json({ error: "Sender account not found." });
+  if (receiverSnap.empty) return res.status(404).json({ error: "Receiver account not found." });
+
+  const senderDoc = senderSnap.docs[0];
+  const receiverDoc = receiverSnap.docs[0];
+  const sender = senderDoc.data();
+  const receiver = receiverDoc.data();
+  if (sender.status !== "active") return res.status(400).json({ error: `Sender account is ${sender.status}.` });
+  if (receiver.status !== "active") return res.status(400).json({ error: `Receiver account is ${receiver.status}.` });
+
+  const txRef = db.collection("transactions").doc();
+  try {
+    await db.runTransaction(async (t) => {
+      const freshOtp = await t.get(otpRef);
+      if (freshOtp.data()!.used) throw new OtpAlreadyUsedError();
+      const freshSender = await t.get(senderDoc.ref);
+      if (Number(freshSender.data()!.balance) < amount) throw new Error("Insufficient balance in sender's account.");
+
+      t.update(senderDoc.ref, { balance: FieldValue.increment(-amount) });
+      t.update(receiverDoc.ref, { balance: FieldValue.increment(amount) });
+      t.update(otpRef, { used: true });
+      t.set(txRef, {
+        reference: generateReference("FTX"),
+        senderAccountId: senderDoc.id,
+        senderCustomerId: sender.customerId,
+        receiverAccountId: receiverDoc.id,
+        receiverCustomerId: receiver.customerId,
+        amount,
+        currency: sender.currency ?? "BDT",
+        type: "fund_transfer",
+        purpose: "Branch-assisted fund transfer",
+        channel: "branch",
+        location: "BD",
+        performedBy: otpData.performedBy,
+        status: "pending",
+        complianceStatus: "pending_check",
+        riskScore: null,
+        riskLevel: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (err) {
+    if (err instanceof OtpAlreadyUsedError) return res.status(400).json({ error: err.message });
+    if (err instanceof Error && err.message === "Insufficient balance in sender's account.") return res.status(400).json({ error: err.message });
+    throw err;
+  }
 
   await writeAuditLog({
     userId: req.user!.uid,

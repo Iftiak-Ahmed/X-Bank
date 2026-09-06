@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { db, FieldValue, Timestamp } from "../config/firebase";
@@ -14,6 +13,7 @@ import { calculateDpsMaturity, DPS_ALLOWED_TERM_YEARS, DPS_PROFIT_RATE_PERCENT }
 import { localDateKey } from "../utils/dateKey";
 import { InsufficientBalanceError, OtpAlreadyUsedError, TransactionRuleBlockedError } from "../utils/errors";
 import { renderTransferOtpEmail, sendEmail } from "../utils/email";
+import { hashOtp, OTP_MAX_ATTEMPTS, OTP_TTL_MS } from "../utils/otp";
 
 export const clientRouter = Router();
 clientRouter.use(requireAuth, requireRole("client"));
@@ -190,13 +190,6 @@ const transferSchema = z.object({
 // different parameters than what the customer actually saw in the email.
 // ---------------------------------------------------------------------------
 
-const TRANSFER_OTP_TTL_MS = 2 * 60 * 1000;
-const TRANSFER_OTP_MAX_ATTEMPTS = 5;
-
-function hashOtp(otp: string): string {
-  return crypto.createHash("sha256").update(otp).digest("hex");
-}
-
 clientRouter.post("/transactions/transfer/request-otp", asyncHandler(async (req, res) => {
   const customerId = await requireOwnCustomer(req, res);
   if (!customerId) return;
@@ -235,7 +228,7 @@ clientRouter.post("/transactions/transfer/request-otp", asyncHandler(async (req,
     otpHash: hashOtp(otp),
     attempts: 0,
     used: false,
-    expiresAt: Timestamp.fromMillis(Date.now() + TRANSFER_OTP_TTL_MS),
+    expiresAt: Timestamp.fromMillis(Date.now() + OTP_TTL_MS),
     createdAt: FieldValue.serverTimestamp(),
   });
 
@@ -246,7 +239,7 @@ clientRouter.post("/transactions/transfer/request-otp", asyncHandler(async (req,
     ...renderTransferOtpEmail({ fullName, otp, amount, currency, receiverAccountNumber }),
   });
 
-  res.status(201).json({ otpId: otpRef.id, expiresInSeconds: TRANSFER_OTP_TTL_MS / 1000 });
+  res.status(201).json({ otpId: otpRef.id, expiresInSeconds: OTP_TTL_MS / 1000 });
 }));
 
 const confirmOtpSchema = z.object({ otpId: z.string(), otp: z.string().length(5) });
@@ -268,7 +261,7 @@ clientRouter.post("/transactions/transfer/confirm", asyncHandler(async (req, res
   if ((otpData.expiresAt as FirebaseFirestore.Timestamp).toMillis() < Date.now()) {
     return res.status(400).json({ error: "This confirmation code has expired. Please request a new one." });
   }
-  if (otpData.attempts >= TRANSFER_OTP_MAX_ATTEMPTS) {
+  if (otpData.attempts >= OTP_MAX_ATTEMPTS) {
     return res.status(400).json({ error: "Too many incorrect attempts. Please request a new code." });
   }
   if (hashOtp(otp) !== otpData.otpHash) {
